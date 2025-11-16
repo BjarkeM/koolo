@@ -62,6 +62,18 @@ func NewGrid(rawCollisionGrid [][]CollisionType, offsetX, offsetY int, canTelepo
 	return grid
 }
 
+// NewGridFromProcessed returns a grid without applying any additional collision processing.
+// Use it when the supplied collision matrix has already been thickened/drilled.
+func NewGridFromProcessed(processedCollisionGrid [][]CollisionType, offsetX, offsetY int) *Grid {
+	return &Grid{
+		OffsetX:       offsetX,
+		OffsetY:       offsetY,
+		Width:         len(processedCollisionGrid[0]),
+		Height:        len(processedCollisionGrid),
+		CollisionGrid: processedCollisionGrid,
+	}
+}
+
 func isBlockingTile(tile CollisionType, canTeleport bool) bool {
 	if tile == CollisionTypeNonWalkable || tile == CollisionTypeObject || tile == CollisionTypeMonster {
 		return true
