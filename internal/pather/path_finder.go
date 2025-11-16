@@ -153,9 +153,7 @@ func (pf *PathFinder) mergeGrids(to data.Position, canTeleport bool) (*game.Grid
 			copyGrid(resultGrid, origin.CollisionGrid, origin.OffsetX-minX, origin.OffsetY-minY)
 			copyGrid(resultGrid, destination.CollisionGrid, destination.OffsetX-minX, destination.OffsetY-minY)
 
-			exits := append([]data.Level{}, origin.AdjacentLevels...)
-			exits = append(exits, destination.AdjacentLevels...)
-			grid := game.NewGrid(resultGrid, minX, minY, canTeleport, exits)
+			grid := game.NewGridFromProcessed(resultGrid, minX, minY)
 
 			return grid, nil
 		}
