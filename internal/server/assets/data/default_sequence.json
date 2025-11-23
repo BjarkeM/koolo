@@ -61,7 +61,10 @@
           "mercRejuvPotionAt": 0,
           "chickenAt": 7,
           "townChickenAt": 15,
-          "mercChickenAt": 0
+          "mercChickenAt": 0,
+          "healingPotionCount": 4,
+          "manaPotionCount": 8,
+          "beltColumns": ["healing", "healing", "mana", "mana"]
         }
       },
       {

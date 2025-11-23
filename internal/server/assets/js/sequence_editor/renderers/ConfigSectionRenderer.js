@@ -145,26 +145,27 @@ export class ConfigSectionRenderer {
     const editor = document.createElement("div");
     editor.className = "config-editor";
 
-    const levelInput = document.createElement("input");
-    levelInput.type = "number";
-    levelInput.placeholder = "Apply at level";
-    levelInput.value = config.level != null ? String(config.level) : "";
-    levelInput.addEventListener("input", (event) => {
-      const target = /** @type {HTMLInputElement} */ (event.target);
-      config.level = parseOptionalNumber(target.value);
-      refreshSummary();
-      this.markDirty();
-    });
-    editor.appendChild(buildField("Character level", levelInput, "config-editor-field"));
-
     if (!config.healthSettings) {
       config.healthSettings = {};
     }
 
-    const grid = document.createElement("div");
-    grid.className = "config-editor-grid";
+    const percentGrid = document.createElement("div");
+    percentGrid.className = "config-editor-grid";
+    const inventoryGrid = document.createElement("div");
+    inventoryGrid.className = "config-editor-grid";
 
-    this.healthFieldDefinitions().forEach(([field, editLabel]) => {
+    const percentFields = [];
+    const inventoryFields = [];
+    this.healthFieldDefinitions().forEach((fieldDef) => {
+      const type = fieldDef[3];
+      if (type === "count") {
+        inventoryFields.push(fieldDef);
+        return;
+      }
+      percentFields.push(fieldDef);
+    });
+
+    const buildNumericField = ([field, editLabel]) => {
       const input = document.createElement("input");
       input.type = "number";
       input.placeholder = "Value";
@@ -175,10 +176,76 @@ export class ConfigSectionRenderer {
         refreshSummary();
         this.markDirty();
       });
-      grid.appendChild(buildField(editLabel, input, "config-editor-field"));
+      return buildField(editLabel, input, "config-editor-field");
+    };
+
+    const levelField = (() => {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.placeholder = "Apply at level";
+      input.value = config.level != null ? String(config.level) : "";
+      input.addEventListener("input", (event) => {
+        const target = /** @type {HTMLInputElement} */ (event.target);
+        config.level = parseOptionalNumber(target.value);
+        refreshSummary();
+        this.markDirty();
+      });
+      return buildField("Character level", input, "config-editor-field");
+    })();
+    percentGrid.appendChild(levelField);
+
+    percentFields.forEach((fieldDef) => {
+      percentGrid.appendChild(buildNumericField(fieldDef));
     });
 
-    editor.appendChild(grid);
+    editor.appendChild(percentGrid);
+
+    inventoryFields.forEach((fieldDef) => {
+      inventoryGrid.appendChild(buildNumericField(fieldDef));
+    });
+
+    if (inventoryFields.length) {
+      editor.appendChild(inventoryGrid);
+    }
+
+    let beltColumns = this.dataAdapter.normalizeBeltColumns(config.healthSettings.beltColumns);
+    const beltGrid = document.createElement("div");
+    beltGrid.className = "config-editor-grid";
+    const beltOptions = this.dataAdapter.beltColumnOptions();
+
+    this.dataAdapter.beltFieldDefinitions().forEach(({ index, label }) => {
+      const select = document.createElement("select");
+
+      const inherit = document.createElement("option");
+      inherit.value = "";
+      inherit.textContent = "Use character setting";
+      select.appendChild(inherit);
+
+      beltOptions.forEach((option) => {
+        const opt = document.createElement("option");
+        opt.value = option.value;
+        opt.textContent = option.label;
+        select.appendChild(opt);
+      });
+
+      select.value = beltColumns[index] ?? "";
+      select.addEventListener("change", (event) => {
+        const target = /** @type {HTMLSelectElement} */ (event.target);
+        beltColumns[index] = target.value || undefined;
+        beltColumns = this.dataAdapter.normalizeBeltColumns(beltColumns);
+        if (beltColumns.some(Boolean)) {
+          config.healthSettings.beltColumns = beltColumns;
+        } else {
+          delete config.healthSettings.beltColumns;
+        }
+        refreshSummary();
+        this.markDirty();
+      });
+
+      beltGrid.appendChild(buildField(label, select, "config-editor-field"));
+    });
+
+    editor.appendChild(beltGrid);
     return editor;
   }
 
@@ -197,18 +264,29 @@ export class ConfigSectionRenderer {
     }
 
     const settings = config.healthSettings || {};
-    this.healthFieldDefinitions().forEach(([field, _editLabel, summaryLabel]) => {
+    this.healthFieldDefinitions().forEach((fieldDef) => {
+      const [field, , summaryLabel] = fieldDef;
+      const fieldType = fieldDef[3];
       const value = settings[field];
       if (value != null) {
-        parts.push(`${summaryLabel} @ ${value}%`);
+        if (fieldType === "count") {
+          parts.push(`${summaryLabel}: ${value}`);
+        } else {
+          parts.push(`${summaryLabel} @ ${value}%`);
+        }
       }
     });
+
+    const beltSummary = this.dataAdapter.formatBeltColumns(settings.beltColumns);
+    if (beltSummary) {
+      parts.push(`Belt: ${beltSummary}`);
+    }
 
     return parts.length ? parts.join(" • ") : "No adjustments";
   }
 
   /**
-   * @returns {Array<[string,string,string]>}
+   * @returns {import("../SequenceDataAdapter.js").HealthFieldDefinition[]}
    */
   healthFieldDefinitions() {
     return this.dataAdapter.healthFieldDefinitions();

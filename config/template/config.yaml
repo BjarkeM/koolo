@@ -90,6 +90,8 @@ game:
   runs: [ stony_tomb, pit, arachnid_lair ]
 
   # Specific runs settings
+  countess:
+    clearFloors: false
   pindleskin:
     skipOnImmunities: [ ] # Allowed values: cold, fire, light, poison
   stony_tomb:

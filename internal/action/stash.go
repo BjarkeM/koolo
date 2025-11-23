@@ -321,6 +321,8 @@ func shouldStashIt(i data.Item, firstRun bool) (bool, bool, string, string) {
 	return false, false, "", "" // Default if no other rule matches
 }
 
+// shouldKeepRecipeItem decides whether the bot should stash a low-quality item that is part of an enabled cube recipe.
+// It now supports keeping multiple jewels for crafting via maxJewelsKept.
 func shouldKeepRecipeItem(i data.Item) bool {
 	ctx := context.Get()
 	ctx.SetLastStep("shouldKeepRecipeItem")
@@ -331,30 +333,48 @@ func shouldKeepRecipeItem(i data.Item) bool {
 	}
 
 	itemInStashNotMatchingRule := false
+	jewelCount := 0
 
-	// Check if we already have the item in our stash and if it doesn't match any of our pickit rules
+	// Count existing magic jewels and detect if there is a magic item of the same base name already in stash
+	// that does not match a pickit rule.
 	for _, it := range ctx.Data.Inventory.ByLocation(item.LocationStash, item.LocationSharedStash) {
-		if it.Name == i.Name {
+		// Count how many magic-quality jewels we already have in stash
+		if string(it.Name) == "Jewel" && it.Quality == item.QualityMagic {
+			jewelCount++
+		}
+		// Match on base name and require magic quality so only another magic item of the same base blocks us
+		if strings.EqualFold(string(it.Name), string(i.Name)) && it.Quality == item.QualityMagic {
 			_, res := ctx.CharacterCfg.Runtime.Rules.EvaluateAll(it)
 			if res != nip.RuleResultFullMatch {
 				itemInStashNotMatchingRule = true
-				break // Optimization: Found one, no need to check others
+				break
 			}
 		}
 	}
 
 	recipeMatch := false
 
-	// Check if the item is part of a recipe and if that recipe is enabled
-	// 'Recipes' variable is expected to be defined/imported from 'cube_recipes.go' or similar.
-	// This function (shouldKeepRecipeItem) itself is external to this file.
-	for _, recipe := range Recipes { // Assuming `Recipes` is properly defined/imported
-		if slices.Contains(recipe.Items, string(i.Name)) && slices.Contains(ctx.CharacterCfg.CubeRecipes.EnabledRecipes, recipe.Name) {
+	// Check if the item is part of an enabled recipe
+	// 'Recipes' is defined/imported from 'cube_recipes.go' or similar
+	for _, recipe := range Recipes {
+		if slices.Contains(recipe.Items, string(i.Name)) &&
+			slices.Contains(ctx.CharacterCfg.CubeRecipes.EnabledRecipes, recipe.Name) {
 			recipeMatch = true
 			break
 		}
 	}
 
+	// Special-case: For jewels used in crafting recipes, stash up to maxJewelsKept copies.
+	// We treat jewels as recipe items and want to preserve multiple copies for cubing.
+	if string(i.Name) == "Jewel" {
+		if recipeMatch && jewelCount < ctx.CharacterCfg.CubeRecipes.JewelsToKeep {
+			return true
+		}
+		// If we've already reached our jewel quota or the recipe is not enabled, do not keep
+		return false
+	}
+
+	// For all other recipe items, keep one copy in the stash if none exists
 	if recipeMatch && !itemInStashNotMatchingRule {
 		return true
 	}

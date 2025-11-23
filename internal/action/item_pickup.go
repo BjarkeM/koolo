@@ -11,7 +11,6 @@ import (
 	"github.com/hectorgimenez/d2go/pkg/data/area"
 	"github.com/hectorgimenez/d2go/pkg/data/item"
 	"github.com/hectorgimenez/d2go/pkg/data/stat"
-	"github.com/hectorgimenez/d2go/pkg/nip"
 	"github.com/hectorgimenez/koolo/internal/action/step"
 	"github.com/hectorgimenez/koolo/internal/context"
 	"github.com/hectorgimenez/koolo/internal/event"
@@ -380,92 +379,56 @@ func shouldBePickedUp(i data.Item) bool {
 	ctx := context.Get()
 	ctx.SetLastAction("shouldBePickedUp")
 
-	// Always pickup Runewords and Wirt's Leg
+	// Always pick up runewords and Wirt's Leg.
 	if i.IsRuneword || i.Name == "WirtsLeg" {
 		return true
 	}
 
-	// Pick up quest items if we're in leveling or questing run
+	// Pick up quest items if in a leveling or questing run.
 	specialRuns := slices.Contains(ctx.CharacterCfg.Game.Runs, "quests") || slices.Contains(ctx.CharacterCfg.Game.Runs, "leveling") || slices.Contains(ctx.CharacterCfg.Game.Runs, "leveling_sequence")
 	if specialRuns {
 		switch i.Name {
-		case "Scroll of Inifuss", "ScrollOfInifuss", "HoradricMalus", "LamEsensTome", "HoradricCube", "AmuletoftheViper", "StaffofKings", "HoradricStaff", "AJadeFigurine", "KhalimsEye", "KhalimsBrain", "KhalimsHeart", "KhalimsFlail", "TheGidbinn", "HellforgeHammer":
+		case "Scroll of Inifuss", "ScrollOfInifuss", "LamEsensTome", "HoradricCube",
+			"AmuletoftheViper", "StaffofKings", "HoradricStaff",
+			"AJadeFigurine", "KhalimsEye", "KhalimsBrain", "KhalimsHeart", "KhalimsFlail", "HellforgeHammer", "TheGidbinn":
 			return true
 		}
 	}
-	if i.ID == 552 { // Book of Skill doesnt work by name, so we find it by ID
+	// Specific ID checks (e.g. Book of Skill and Scroll of Inifuss).
+	if i.ID == 552 || i.ID == 524 {
 		return true
 	}
 
-	if i.ID == 524 { // Scroll of Inifuss
-		return true
-	}
-	// Skip picking up gold if we can not carry more
+	// Skip picking up gold if inventory is full of gold.
 	gold, _ := ctx.Data.PlayerUnit.FindStat(stat.Gold, 0)
 	if gold.Value >= ctx.Data.PlayerUnit.MaxGold() && i.Name == "Gold" {
 		ctx.Logger.Debug("Skipping gold pickup, inventory full")
 		return false
 	}
 
-	// Skip picking up gold, usually early game there are small amounts of gold in many places full of enemies, better
-	// stay away of that
-	// Leaving it for now, but can probably be removed due to the auto MinGoldPickupThreshold in leveling config
+	// In leveling runs, pick up any non‑gold item if very low on gold.
 	_, isLevelingChar := ctx.Char.(context.LevelingCharacter)
 	if isLevelingChar && IsLowGold() && i.Name != "Gold" {
 		return true
 	}
 
+	// Pick up stamina potions only when needed in leveling runs.
 	if isLevelingChar && i.Name == "StaminaPotion" {
 		if ctx.HealthManager.ShouldPickStaminaPot() {
 			return true
 		}
 	}
 
-	// Pickup all magic or superior items if total gold is low, filter will not pass and items will be sold to vendor
+	// If total gold is below the minimum threshold, pick up magic and better items for selling.
 	minGoldPickupThreshold := ctx.CharacterCfg.Game.MinGoldPickupThreshold
 	if ctx.Data.PlayerUnit.TotalPlayerGold() < minGoldPickupThreshold && i.Quality >= item.QualityMagic {
 		return true
 	}
 
-	// Evaluate item based on NIP rules
-	playerRule, mercRule := ctx.Data.CharacterCfg.Runtime.Rules.EvaluateTiers(i, ctx.Data.CharacterCfg.Runtime.TierRules)
-	if playerRule.Tier() > 0.0 || mercRule.MercTier() > 0.0 {
-		if i.Quality <= item.QualitySuperior {
-			//If item doesn't need ID, check tier right away and keep it if better than equipped
-			if playerRule.Tier() > 0.0 {
-				if IsBetterThanEquipped(i, false, PlayerScore) {
-					return true
-				}
-			} else {
-				if IsBetterThanEquipped(i, true, MercScore) {
-					return true
-				}
-			}
-		} else {
-			//need ID
-			return true
-		}
-	}
-
-	// Evaluate item based on NIP rules ignoring tier rules
-	matchedRule, result := ctx.Data.CharacterCfg.Runtime.Rules.EvaluateAllIgnoreTiers(i)
-	if result == nip.RuleResultNoMatch {
-		return false
-	}
-	if result == nip.RuleResultPartial {
-		return true
-	}
-
-	// Blacklist item if it exceeds quantity limits according to pickit rules
-	if doesExceedQuantity(matchedRule) {
-		if !IsBlacklisted(i) {
-			ctx.CurrentGame.BlacklistedItems = append(ctx.CurrentGame.BlacklistedItems, i)
-			ctx.Logger.Debug(fmt.Sprintf("Blacklisted item %s (UnitID: %d) because it exceeds quantity limits defined in pickit.", i.Name, i.UnitID))
-		}
-		return false // Do not pick up the item if it exceeds quantity
-	}
-
-	return true
+	// After all heuristics, defer to strict pickit/tier evaluation.
+	// This function encapsulates the final rule logic (tiers and NIP) and
+	// handles quantity blacklisting without re‑implementing it here.
+	return shouldMatchRulesOnly(i)
 }
 
 func IsBlacklisted(itm data.Item) bool {

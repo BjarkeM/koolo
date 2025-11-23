@@ -263,3 +263,54 @@
         </label>
     </fieldset>
 {{ end }}
+
+{{ define "shopping" }}
+  <fieldset>
+    <legend>Shopping</legend>
+
+    <label>
+      <input type="checkbox" name="shoppingEnabled" {{ if .Config.Shopping.Enabled }}checked{{ end }}>
+      Enable Shopping
+    </label>
+
+    <label>
+      <span>Max gold to spend</span>
+      <input type="number" name="shoppingMaxGoldToSpend" min="0" step="1" value="{{ .Config.Shopping.MaxGoldToSpend }}">
+    </label>
+
+    <label>
+      <span>Min gold reserve</span>
+      <input type="number" name="shoppingMinGoldReserve" min="0" step="1" value="{{ .Config.Shopping.MinGoldReserve }}">
+    </label>
+
+    <label>
+      <span>Refreshes per run</span>
+      <input type="number" name="shoppingRefreshesPerRun" min="0" step="1" value="{{ .Config.Shopping.RefreshesPerRun }}">
+    </label>
+
+    <label>
+      <span>Shopping rules file (optional)</span>
+      <input type="text" name="shoppingRulesFile" value="{{ .Config.Shopping.ShoppingRulesFile }}" placeholder="e.g. shopping_rules.nip">
+    </label>
+
+    <label>
+      <span>Item types (comma-separated)</span>
+      <input type="text" name="shoppingItemTypes" value="{{ range $i, $v := .Config.Shopping.ItemTypes }}{{ if gt $i 0 }}, {{ end }}{{$v}}{{ end }}">
+    </label>
+
+    <div class="grid grid-cols-2 gap-2">
+      <label><input type="checkbox" name="shoppingVendorAkara"   {{ if .Config.Shopping.VendorAkara }}checked{{ end }}> Akara (A1)</label>
+      <label><input type="checkbox" name="shoppingVendorCharsi"  {{ if .Config.Shopping.VendorCharsi }}checked{{ end }}> Charsi (A1)</label>
+      <label><input type="checkbox" name="shoppingVendorGheed"   {{ if .Config.Shopping.VendorGheed }}checked{{ end }}> Gheed (A1)</label>
+
+      <label><input type="checkbox" name="shoppingVendorFara"    {{ if .Config.Shopping.VendorFara }}checked{{ end }}> Fara (A2)</label>
+      <label><input type="checkbox" name="shoppingVendorDrognan" {{ if .Config.Shopping.VendorDrognan }}checked{{ end }}> Drognan (A2)</label>
+      <label><input type="checkbox" name="shoppingVendorElzix"   {{ if .Config.Shopping.VendorElzix }}checked{{ end }}> Elzix (A2)</label>
+
+      <label><input type="checkbox" name="shoppingVendorOrmus"   {{ if .Config.Shopping.VendorOrmus }}checked{{ end }}> Ormus (A3)</label>
+
+      <label><input type="checkbox" name="shoppingVendorMalah"   {{ if .Config.Shopping.VendorMalah }}checked{{ end }}> Malah (A5)</label>
+      <label><input type="checkbox" name="shoppingVendorAnya"    {{ if .Config.Shopping.VendorAnya }}checked{{ end }}> Anya (A5)</label>
+    </div>
+  </fieldset>
+{{ end }}

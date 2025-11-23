@@ -3,6 +3,13 @@
 import { DIFFICULTIES } from "./constants.js";
 import { normalizeRunNumericValue, parseOptionalNumber } from "./utils.js";
 
+const BELT_COLUMN_COUNT = 4;
+const BELT_COLUMN_OPTIONS = [
+  { value: "healing", label: "Healing" },
+  { value: "mana", label: "Mana" },
+  { value: "rejuvenation", label: "Rejuvenation" },
+];
+
 /** @typedef {import("./constants.js").DifficultyKey} DifficultyKey */
 
 /** @typedef {string|number|null|undefined} NumericLike */
@@ -27,10 +34,20 @@ import { normalizeRunNumericValue, parseOptionalNumber } from "./utils.js";
  */
 
 /**
+ * @typedef {"healingPotionAt"|"manaPotionAt"|"rejuvPotionAtLife"|"rejuvPotionAtMana"|"mercHealingPotionAt"|"mercRejuvPotionAt"|"chickenAt"|"townChickenAt"|"mercChickenAt"|"healingPotionCount"|"manaPotionCount"|"rejuvPotionCount"} HealthNumericField
+ */
+
+/**
+ * @typedef {Partial<Record<HealthNumericField, NumericLike|null|undefined>> & {
+ * beltColumns?: Array<string|null|undefined>
+ * }} RawHealthSettings
+ */
+
+/**
  * @typedef {{
  * level?: NumericLike,
  * Level?: NumericLike,
- * healthSettings?: Record<string, NumericLike>
+ * healthSettings?: RawHealthSettings
  * }} RawConfigEntry
  */
 
@@ -59,9 +76,15 @@ import { normalizeRunNumericValue, parseOptionalNumber } from "./utils.js";
  */
 
 /**
+ * @typedef {Partial<Record<HealthNumericField, number|undefined>> & {
+ *   beltColumns?: Array<string|undefined>
+ * }} SequenceHealthSettings
+ */
+
+/**
  * @typedef {RawConfigEntry & {
  * level?: number,
- * healthSettings: Record<string, number|undefined>
+ * healthSettings: SequenceHealthSettings
  * }} SequenceConfigEntry
  */
 
@@ -108,6 +131,15 @@ import { normalizeRunNumericValue, parseOptionalNumber } from "./utils.js";
 /** @typedef {RawRunEntry} RunEntryInput */
 /** @typedef {RawConfigEntry} ConfigEntryInput */
 /** @typedef {RawConditionEntry} ConditionEntryInput */
+
+/**
+ * @typedef {[
+ *   HealthNumericField,
+ *   string,
+ *   string,
+ *   ("percent"|"count")?
+ * ]} HealthFieldDefinition
+ */
 
 /**
  * Performs hydration, normalization, and serialization of sequence editor data.
@@ -222,7 +254,7 @@ export class SequenceDataAdapter {
 
     const healthSource =
       raw.healthSettings && typeof raw.healthSettings === "object"
-        ? /** @type {Record<string, NumericLike>} */ (raw.healthSettings)
+        ? /** @type {RawHealthSettings} */ (raw.healthSettings)
         : {};
 
     this.healthFieldDefinitions().forEach(([field]) => {
@@ -231,6 +263,11 @@ export class SequenceDataAdapter {
         entry.healthSettings[field] = value;
       }
     });
+
+    const beltColumns = this.normalizeBeltColumns(healthSource.beltColumns);
+    if (beltColumns.some(Boolean)) {
+      entry.healthSettings.beltColumns = beltColumns;
+    }
 
     this.state.ensureEntryUID(entry);
     return entry;
@@ -340,7 +377,7 @@ export class SequenceDataAdapter {
       result.level = entry.level;
     }
 
-    const health = /** @type {Record<string, number>} */ ({});
+    const health = /** @type {Record<string, number|Array<string|undefined>>} */ ({});
     if (entry.healthSettings && typeof entry.healthSettings === "object") {
       this.healthFieldDefinitions().forEach(([field]) => {
         const value = entry.healthSettings[field];
@@ -348,6 +385,11 @@ export class SequenceDataAdapter {
           health[field] = value;
         }
       });
+
+      const beltColumns = this.normalizeBeltColumns(entry.healthSettings.beltColumns);
+      if (beltColumns.some(Boolean)) {
+        health.beltColumns = beltColumns.map((value) => (value ? value : null));
+      }
     }
 
     if (Object.keys(health).length) {
@@ -484,12 +526,24 @@ export class SequenceDataAdapter {
       return;
     }
     entry.level = parseOptionalNumber(entry.level);
-    if (!entry.healthSettings) {
+    if (!entry.healthSettings || typeof entry.healthSettings !== "object") {
       entry.healthSettings = {};
     }
+
+    const numericFields = new Set(/** @type {string[]} */ (this.healthFieldDefinitions().map(([field]) => field)));
     Object.keys(entry.healthSettings).forEach((key) => {
+      if (!numericFields.has(key)) {
+        return;
+      }
       entry.healthSettings[key] = parseOptionalNumber(entry.healthSettings[key]);
     });
+
+    const beltColumns = this.normalizeBeltColumns(entry.healthSettings.beltColumns);
+    if (beltColumns.some(Boolean)) {
+      entry.healthSettings.beltColumns = beltColumns;
+    } else if (entry.healthSettings.beltColumns) {
+      delete entry.healthSettings.beltColumns;
+    }
     this.state.ensureEntryUID(entry);
   }
 
@@ -591,19 +645,84 @@ export class SequenceDataAdapter {
   }
 
   /**
-   * @returns {Array<[string,string,string]>}
+   * @returns {HealthFieldDefinition[]}
    */
   healthFieldDefinitions() {
     return [
-      ["healingPotionAt", "Healing Potion At", "Heal"],
-      ["manaPotionAt", "Mana Potion At", "Mana"],
-      ["rejuvPotionAtLife", "Rejuv Potion At Life", "Rejuv HP"],
-      ["rejuvPotionAtMana", "Rejuv Potion At Mana", "Rejuv Mana"],
-      ["mercHealingPotionAt", "Merc Healing Potion At", "Merc Heal"],
-      ["mercRejuvPotionAt", "Merc Rejuv Potion At", "Merc Rejuv"],
-      ["chickenAt", "Chicken At", "Chicken"],
-      ["townChickenAt", "Town Chicken At", "Town"],
-      ["mercChickenAt", "Merc Chicken At", "Merc Chicken"],
+      ["healingPotionAt", "Healing Potion At", "Heal", "percent"],
+      ["manaPotionAt", "Mana Potion At", "Mana", "percent"],
+      ["rejuvPotionAtLife", "Rejuv Potion At Life", "Rejuv HP", "percent"],
+      ["rejuvPotionAtMana", "Rejuv Potion At Mana", "Rejuv Mana", "percent"],
+      ["mercHealingPotionAt", "Merc Healing Potion At", "Merc Heal", "percent"],
+      ["mercRejuvPotionAt", "Merc Rejuv Potion At", "Merc Rejuv", "percent"],
+      ["chickenAt", "Chicken At", "Chicken", "percent"],
+      ["townChickenAt", "Town Chicken At", "Town", "percent"],
+      ["mercChickenAt", "Merc Chicken At", "Merc Chicken", "percent"],
+      ["healingPotionCount", "Inventory Healing Potions", "Heal pots", "count"],
+      ["manaPotionCount", "Inventory Mana Potions", "Mana pots", "count"],
+      ["rejuvPotionCount", "Inventory Rejuv Potions", "Rejuv pots", "count"],
     ];
+  }
+
+  /**
+   * @returns {Array<{field:string,index:number,label:string}>}
+   */
+  beltFieldDefinitions() {
+    return Array.from({ length: BELT_COLUMN_COUNT }, (_, index) => ({
+      field: "beltColumns",
+      index,
+      label: `Belt Column ${index + 1}`,
+    }));
+  }
+
+  /**
+   * @returns {Array<{value:string,label:string}>}
+   */
+  beltColumnOptions() {
+    return BELT_COLUMN_OPTIONS.map((option) => ({ ...option }));
+  }
+
+  /**
+   * @returns {number}
+   */
+  beltColumnCount() {
+    return BELT_COLUMN_COUNT;
+  }
+
+  /**
+   * @param {Array<string|null|undefined>|null|undefined} value
+   * @returns {Array<string|undefined>}
+   */
+  normalizeBeltColumns(value) {
+    const values = Array.isArray(value) ? value : [];
+    const allowed = new Set(BELT_COLUMN_OPTIONS.map((option) => option.value));
+    const normalized = Array.from({ length: BELT_COLUMN_COUNT }, (_, index) => {
+      const entry = values[index];
+      if (typeof entry === "string") {
+        const trimmed = entry.trim().toLowerCase();
+        if (allowed.has(trimmed)) {
+          return trimmed;
+        }
+        return undefined;
+      }
+      if (entry === null) {
+        return undefined;
+      }
+      return undefined;
+    });
+    return normalized;
+  }
+
+  /**
+   * @param {Array<string|undefined>} beltColumns
+   * @returns {string}
+   */
+  formatBeltColumns(beltColumns) {
+    const normalized = this.normalizeBeltColumns(beltColumns);
+    if (!normalized.some(Boolean)) {
+      return "";
+    }
+    const optionMap = new Map(BELT_COLUMN_OPTIONS.map((option) => [option.value, option.label]));
+    return normalized.map((value) => (value ? optionMap.get(value) || value : "—")).join("/");
   }
 }

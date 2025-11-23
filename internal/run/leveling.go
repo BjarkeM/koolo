@@ -181,6 +181,7 @@ func (a Leveling) setupLevelOneConfig() {
 	a.ctx.CharacterCfg.BackToTown.EquipmentBroken = false
 	a.ctx.CharacterCfg.Game.Tristram.ClearPortal = false
 	a.ctx.CharacterCfg.Game.Tristram.FocusOnElitePacks = true
+	a.ctx.CharacterCfg.Game.Countess.ClearFloors = false
 	a.ctx.CharacterCfg.Game.Pit.MoveThroughBlackMarsh = true
 	a.ctx.CharacterCfg.Game.Pit.OpenChests = true
 	a.ctx.CharacterCfg.Game.Pit.FocusOnElitePacks = false

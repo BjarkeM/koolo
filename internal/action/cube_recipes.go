@@ -481,7 +481,8 @@ func CubeRecipes() error {
 							// Check if we have a GrandCharm in stash that doesn't match any NIP rules
 							hasUnmatchedGrandCharm := false
 							for _, stashItem := range itemsInStash {
-								if stashItem.Name == "GrandCharm" {
+								// Skip non‑magic grand charms (e.g., Gheeds Fortune) when checking for a reroll candidate
+								if stashItem.Name == "GrandCharm" && stashItem.Quality == item.QualityMagic {
 									if _, result := ctx.CharacterCfg.Runtime.Rules.EvaluateAll(stashItem); result != nip.RuleResultFullMatch {
 										hasUnmatchedGrandCharm = true
 										break

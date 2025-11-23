@@ -660,6 +660,13 @@
                 </label>
                 {{ end }}
             </div>
+            <!-- New field: Jewels to keep -->
+            <label>
+                Jewels to keep:
+                <input type="number" name="jewelsToKeep" min="1"
+                    value="{{ .Config.CubeRecipes.JewelsToKeep }}" />
+                <small>Number of magic jewels to stash for crafting</small>
+            </label>
             <h3>Back to Town Settings:</h3>
             <fieldset class="grid">
                 <label>

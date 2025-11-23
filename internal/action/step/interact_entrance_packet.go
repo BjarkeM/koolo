@@ -6,6 +6,7 @@ import (
 
 	"github.com/hectorgimenez/d2go/pkg/data"
 	"github.com/hectorgimenez/d2go/pkg/data/area"
+	"github.com/hectorgimenez/d2go/pkg/data/mode"
 	"github.com/hectorgimenez/d2go/pkg/data/object"
 	"github.com/hectorgimenez/koolo/internal/context"
 	"github.com/hectorgimenez/koolo/internal/pather"
@@ -156,6 +157,13 @@ func InteractEntrancePacket(targetArea area.ID) error {
 		"entranceName", targetEntrance.Name,
 		"position", fmt.Sprintf("X:%d Y:%d", targetEntrance.Position.X, targetEntrance.Position.Y),
 		"distance", finalDistance)
+
+	// Wait for character to stop moving before sending packet (critical for server sync)
+	if err := waitForPlayerStable(ctx); err != nil {
+		ctx.Logger.Warn("Player not stable before entrance interaction", "error", err)
+		// Continue anyway but log the warning
+	}
+
 	ctx.Logger.Info("Sending entrance interaction packet",
 		"targetArea", targetArea.Area().Name,
 		"entranceID", targetEntrance.ID,
@@ -164,13 +172,37 @@ func InteractEntrancePacket(targetArea area.ID) error {
 	// Attempt packet send with retries
 	var lastErr error
 	for attempt := 1; attempt <= maxPacketEntranceAttempts; attempt++ {
+		// Adaptive sleep before packet send to allow server/client sync
+		// Use Medium sensitivity since entrance interaction is moderately critical
+		utils.PingSleep(utils.Medium, 50)
+
+		// Refresh game data immediately before packet send
+		ctx.RefreshGameData()
+
+		// Re-validate entrance still exists and is in range
+		found := false
+		for _, ent := range ctx.Data.Entrances {
+			if ent.ID == targetEntrance.ID {
+				targetEntrance = ent
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			lastErr = fmt.Errorf("entrance disappeared before packet send")
+			ctx.Logger.Warn("Entrance not found before packet send", "attempt", attempt)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
 		// Send the packet using PacketSender
 		if err := ctx.PacketSender.InteractWithEntrance(targetEntrance); err != nil {
 			ctx.Logger.Warn("Entrance packet send failed",
 				"attempt", attempt,
 				"error", err)
 			lastErr = err
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
@@ -225,6 +257,23 @@ func waitForAreaTransition(ctx *context.Status, targetArea area.ID, timeout time
 	}
 
 	return false
+}
+
+// waitForPlayerStable waits for the player to finish moving or casting
+// This ensures the server is ready to accept interaction packets
+func waitForPlayerStable(ctx *context.Status) error {
+	waitingStartTime := time.Now()
+	for ctx.Data.PlayerUnit.Mode == mode.CastingSkill ||
+		ctx.Data.PlayerUnit.Mode == mode.Running ||
+		ctx.Data.PlayerUnit.Mode == mode.Walking ||
+		ctx.Data.PlayerUnit.Mode == mode.WalkingInTown {
+		if time.Since(waitingStartTime) > 2*time.Second {
+			return fmt.Errorf("timeout waiting for player to stop moving or casting")
+		}
+		time.Sleep(25 * time.Millisecond)
+		ctx.RefreshGameData()
+	}
+	return nil
 }
 
 // TryInteractEntrancePacket is a safe wrapper that attempts packet interaction

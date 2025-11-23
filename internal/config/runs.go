@@ -35,6 +35,8 @@ const (
 	EnduguRun           Run = "endugu"
 	UtilityRun          Run = "utility"
 	FireEyeRun          Run = "fire_eye"
+	RakanishuRun        Run = "rakanishu"
+	ShoppingRun         Run = "shopping"
 	//Leveling Sequence
 	DenRun                   Run = "den"
 	BloodravenRun            Run = "bloodraven"
@@ -101,6 +103,7 @@ var AvailableRuns = map[Run]interface{}{
 	EnduguRun:           nil,
 	UtilityRun:          nil,
 	FireEyeRun:          nil,
+	ShoppingRun:         nil,
 	DevelopmentRun:      nil,
 }
 
@@ -159,6 +162,7 @@ var SequencerRuns = []Run{
 	EldritchRun,
 	EnduguRun,
 	FrozenAuraMercRun,
+	FireEyeRun,
 	GidbinnRun,
 	IzualRun,
 	JadeFigurineRun,
@@ -174,6 +178,7 @@ var SequencerRuns = []Run{
 	PindleskinRun,
 	PitRun,
 	RadamentRun,
+	RakanishuRun,
 	RescueBarbsRun,
 	RescueCainRun,
 	RetrieveHammerRun,

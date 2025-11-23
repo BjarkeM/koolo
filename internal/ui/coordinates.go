@@ -229,4 +229,12 @@ const (
 
 	EquipMercTorsX = 275
 	EquipMercTorsY = 255
+
+	VendorTabStartXClassic = SwitchStashTabBtnXClassic
+	VendorTabStartYClassic = SwitchStashTabBtnYClassic
+	VendorTabSizeClassic   = SwitchStashTabBtnTabSizeClassic
+
+	VendorTabStartX = SwitchStashTabBtnX
+	VendorTabStartY = SwitchStashTabBtnY
+	VendorTabSize   = SwitchStashTabBtnTabSize
 )
