@@ -111,7 +111,6 @@ func (t *DevRun) logPlayerState(reason string) {
 	)
 }
 
-// make a runFuncWithOverride, that runs any given function with cursor override enabled, and restores previous state after
 func (t *DevRun) runFuncWithOverride(f func() error) error {
 	restoreCursorOverride := false
 	if !t.ctx.MemoryInjector.CursorOverrideActive() {
