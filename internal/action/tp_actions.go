@@ -62,7 +62,7 @@ func ReturnTown() error {
 		if errCheck := checkPlayerDeathForTP(ctx); errCheck != nil {
 			return errCheck
 		}
-		return errors.New("portal not found")
+		return errors.New("no town portal found, cannot return to town")
 	}
 
 	if err := step.MoveTo(portal.Position, step.WithIgnoreMonsters()); err != nil {
@@ -85,7 +85,7 @@ func ReturnTown() error {
 	if initialInteractionErr != nil {
 		ctx.Logger.Debug("Initial portal interaction failed, attempting to clear area.", "error", initialInteractionErr)
 		// If initial interaction fails, THEN clear the area
-		if err = ClearAreaAroundPosition(portal.Position, 8, data.MonsterAnyFilter()); err != nil {
+		if err = ClearAreaAroundPosition(portal.Position, 14, data.MonsterAnyFilter()); err != nil {
 			ctx.Logger.Warn("Error clearing area around portal", "error", err)
 			// Even if clearing area fails, check if we died during the process
 			if errCheck := checkPlayerDeathForTP(ctx); errCheck != nil {
@@ -126,6 +126,8 @@ func ReturnTown() error {
 			// Verify area data exists and is loaded
 			if townData, ok := ctx.Data.Areas[ctx.Data.PlayerUnit.Area]; ok {
 				if townData.IsInside(ctx.Data.PlayerUnit.Position) {
+					// in town, go get a refill if we really need it
+					VendorRefill(false, false)
 					return nil
 				}
 			}
