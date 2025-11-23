@@ -645,9 +645,10 @@ func (s *HttpServer) Listen(port int) error {
 
 	assets, _ := fs.Sub(assetsFS, "assets")
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
-
+	listenAddr := fmt.Sprintf("localhost:%d", port)
+	s.logger.Info("Starting Koolo at", "address", listenAddr)
 	s.server = &http.Server{
-		Addr: fmt.Sprintf(":%d", port),
+		Addr: listenAddr,
 	}
 
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
