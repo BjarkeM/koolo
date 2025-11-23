@@ -1,9 +1,10 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
+	"strings"
 
 	"github.com/hectorgimenez/d2go/pkg/data/area"
 	"github.com/hectorgimenez/koolo/internal/context"
@@ -15,187 +16,208 @@ import (
 func WayPoint(dest area.ID) error {
 	ctx := context.Get()
 	ctx.SetLastAction("WayPoint")
+	ctx.WaitForGameToLoad()
 
-	if !ctx.Data.PlayerUnit.Area.IsTown() {
-		if err := ReturnTown(); err != nil {
+	if ctx.Data.PlayerUnit.Area == dest {
+		return nil
+	}
+
+	wpArea, wpCoords, err := nearestWaypointArea(dest)
+	if err != nil {
+		return err
+	}
+
+	if err := ensureWaypointAccess(ctx); err != nil {
+		return err
+	}
+
+	ctx.RefreshGameData()
+
+	if wpArea != ctx.Data.PlayerUnit.Area {
+		if err := selectWaypoint(ctx, wpCoords, wpArea); err != nil {
+			return err
+		}
+		ctx.WaitForGameToLoad()
+	}
+
+	if err := traverseRemainder(wpArea, dest); err != nil {
+		return err
+	}
+
+	// Verify that we've reached the destination
+	ctx.WaitForGameToLoad()
+	ctx.RefreshGameData()
+	if err := ensureAreaSync(ctx, dest); err != nil {
+		return fmt.Errorf("failed to reach destination area %s using waypoint: %w", area.Areas[dest].Name, err)
+	}
+	if ctx.Data.PlayerUnit.Area != dest {
+		return fmt.Errorf("failed to reach destination area %s using waypoint", area.Areas[dest].Name)
+	}
+
+	// apply buffs after exiting a waypoint if configured
+	if ctx.CharacterCfg.Character.BuffAfterWP {
+		Buff()
+	}
+
+	return nil
+}
+
+func traverseRemainder(wpArea, dest area.ID) error {
+	ctx := context.Get()
+	ctx.SetLastAction("useWP")
+
+	if wpArea == dest {
+		return nil
+	}
+
+	path, ok := staticAreaPath(wpArea, dest)
+	if !ok {
+		return fmt.Errorf("no static route found from %s to %s", area.Areas[wpArea].Name, area.Areas[dest].Name)
+	}
+
+	pathNames := make([]string, len(path))
+	for i, a := range path {
+		pathNames[i] = area.Areas[a].Name
+	}
+
+	ctx.Logger.Info("Traversing areas to reach destination", slog.String("areas", strings.Join(pathNames, "-> ")))
+
+	for i := 1; i < len(path); i++ {
+		dst := path[i]
+		if err := moveToAreaSingle(ctx, dst, false); err != nil {
+			return err
+		}
+
+		if err := DiscoverWaypoint(); err != nil {
 			return err
 		}
 	}
 
-	if ctx.Data.PlayerUnit.Area == dest {
-		ctx.WaitForGameToLoad()
-		return nil
-	}
-
-	wpCoords, found := area.WPAddresses[dest]
-	if !found {
-		return fmt.Errorf("area destination %s is not mapped to a WayPoint (waypoint.go)", area.Areas[dest].Name)
-	}
-
-	for _, o := range ctx.Data.Objects {
-		if o.IsWaypoint() {
-
-			err := InteractObject(o, func() bool {
-				return ctx.Data.OpenMenus.Waypoint
-			})
-			if err != nil {
-				return err
-			}
-			if ctx.Data.LegacyGraphics {
-				actTabX := ui.WpTabStartXClassic + (wpCoords.Tab-1)*ui.WpTabSizeXClassic + (ui.WpTabSizeXClassic / 2)
-				ctx.HID.Click(game.LeftButton, actTabX, ui.WpTabStartYClassic)
-			} else {
-				actTabX := ui.WpTabStartX + (wpCoords.Tab-1)*ui.WpTabSizeX + (ui.WpTabSizeX / 2)
-				ctx.HID.Click(game.LeftButton, actTabX, ui.WpTabStartY)
-			}
-			utils.PingSleep(utils.Medium, 250) // Medium operation: Wait for waypoint tab to load
-			// Just to make sure no message like TZ change or public game spam prevent bot from clicking on waypoint
-			ClearMessages()
-		}
-	}
-
-	err := useWP(dest)
-	if err != nil {
-		return err
-	}
-
-	// Wait for the game to load after using the waypoint
-	ctx.WaitForGameToLoad()
-
-	// Verify that we've reached the destination
-	ctx.RefreshGameData()
-	if ctx.Data.PlayerUnit.Area != dest {
-		return fmt.Errorf("failed to reach destination area %s using waypoint", area.Areas[dest].Name)
-	}
-
-	// apply buffs after exiting a waypoint if configured
-	if ctx.CharacterCfg.Character.BuffAfterWP {
-		Buff()
-	}
-
 	return nil
 }
 
-func FieldWayPoint(dest area.ID) error {
-	ctx := context.Get()
-	ctx.SetLastAction("WayPoint")
+func ensureWaypointAccess(ctx *context.Status) error {
 
-	if ctx.Data.PlayerUnit.Area == dest {
-		ctx.WaitForGameToLoad()
-		return nil
-	}
+	if !ctx.Data.PlayerUnit.Area.IsTown() {
 
-	wpCoords, found := area.WPAddresses[dest]
-	if !found {
-		return fmt.Errorf("area destination %s is not mapped to a WayPoint (waypoint.go)", area.Areas[dest].Name)
-	}
-
-	for _, o := range ctx.Data.Objects {
-		if o.IsWaypoint() {
-
-			err := InteractObject(o, func() bool {
-				return ctx.Data.OpenMenus.Waypoint
-			})
-			if err != nil {
-				return err
-			}
-			if ctx.Data.LegacyGraphics {
-				actTabX := ui.WpTabStartXClassic + (wpCoords.Tab-1)*ui.WpTabSizeXClassic + (ui.WpTabSizeXClassic / 2)
-				ctx.HID.Click(game.LeftButton, actTabX, ui.WpTabStartYClassic)
-			} else {
-				actTabX := ui.WpTabStartX + (wpCoords.Tab-1)*ui.WpTabSizeX + (ui.WpTabSizeX / 2)
-				ctx.HID.Click(game.LeftButton, actTabX, ui.WpTabStartY)
-			}
-			utils.Sleep(200)
-			// Just to make sure no message like TZ change or public game spam prevent bot from clicking on waypoint
-			ClearMessages()
+		if ctx.Data.CanTeleport() && hasWaypointInCurrentArea(ctx) {
+			return nil
 		}
+
+		if err := ReturnTown(); err != nil {
+			return err
+		}
+		ctx.RefreshGameData()
+		utils.Sleep(300)
 	}
-
-	err := useWP(dest)
-	if err != nil {
-		return err
+	if !hasWaypointInCurrentArea(ctx) {
+		return fmt.Errorf("should be in town, but no waypoint found in %s", ctx.Data.PlayerUnit.Area.Area().Name)
 	}
-
-	// Wait for the game to load after using the waypoint
-	ctx.WaitForGameToLoad()
-
-	// Verify that we've reached the destination
-	ctx.RefreshGameData()
-	if ctx.Data.PlayerUnit.Area != dest {
-		return fmt.Errorf("failed to reach destination area %s using waypoint", area.Areas[dest].Name)
-	}
-
-	// apply buffs after exiting a waypoint if configured
-	if ctx.CharacterCfg.Character.BuffAfterWP {
-		Buff()
-	}
-
 	return nil
 }
 
-func useWP(dest area.ID) error {
-	ctx := context.Get()
-	ctx.SetLastAction("useWP")
-
-	finalDestination := dest
-	traverseAreas := make([]area.ID, 0)
-	currentWP := area.WPAddresses[dest]
-	if !slices.Contains(ctx.Data.PlayerUnit.AvailableWaypoints, dest) {
-		for {
-			traverseAreas = append(currentWP.LinkedFrom, traverseAreas...)
-
-			if currentWP.LinkedFrom != nil {
-				dest = currentWP.LinkedFrom[0]
-			}
-
-			if len(currentWP.LinkedFrom) == 0 {
-				return fmt.Errorf("no available waypoint found to reach destination %s", area.Areas[finalDestination].Name)
-			}
-
-			currentWP = area.WPAddresses[currentWP.LinkedFrom[0]]
-
-			if slices.Contains(ctx.Data.PlayerUnit.AvailableWaypoints, dest) {
-				break
-			}
+func hasWaypointInCurrentArea(ctx *context.Status) bool {
+	for _, o := range ctx.Data.Objects {
+		if o.IsWaypoint() {
+			return true
 		}
 	}
+	return false
+}
 
-	currentWP = area.WPAddresses[dest]
-
-	// First use the previous available waypoint that we have discovered
-	if ctx.Data.LegacyGraphics {
-		areaBtnY := ui.WpListStartYClassic + (currentWP.Row-1)*ui.WpAreaBtnHeightClassic + (ui.WpAreaBtnHeightClassic / 2)
-		ctx.HID.Click(game.LeftButton, ui.WpListPositionXClassic, areaBtnY)
-	} else {
-		areaBtnY := ui.WpListStartY + (currentWP.Row-1)*ui.WpAreaBtnHeight + (ui.WpAreaBtnHeight / 2)
-		ctx.HID.Click(game.LeftButton, ui.WpListPositionX, areaBtnY)
+func openWaypointMenu(ctx *context.Status) error {
+	for _, o := range ctx.Data.Objects {
+		if o.IsWaypoint() {
+			return InteractObject(o, func() bool {
+				return ctx.Data.OpenMenus.Waypoint
+			})
+		}
 	}
-	utils.PingSleep(utils.Critical, 1000) // Critical operation: Wait for waypoint travel to complete
+	utils.Sleep(500)
+	return fmt.Errorf("no waypoint object found in %s", ctx.Data.PlayerUnit.Area.Area().Name)
+}
 
-	// We have the WP discovered, just use it
-	if len(traverseAreas) == 0 {
+func selectWaypoint(ctx *context.Status, wpCoords area.WPAddress, dest area.ID) error {
+	ctx.SetLastAction("selectWP")
+	for range 3 {
+		if ctx.Data.OpenMenus.LoadingScreen {
+			ctx.Logger.Debug("Loading screen detected. Waiting for game to load before selecting waypoint...")
+			ctx.WaitForGameToLoad()
+		}
+		ctx.RefreshGameData()
+		ClearMessages()
+		utils.Sleep(200)
+		if ctx.Data.PlayerUnit.Area == dest {
+			return nil
+		}
+		if err := ensureAreaSync(ctx, ctx.Data.PlayerUnit.Area); err != nil {
+			return err
+		}
+		if !ctx.Data.OpenMenus.Waypoint {
+			if err := openWaypointMenu(ctx); err != nil {
+				return err
+			}
+		}
+		utils.Sleep(100)
+		if !ctx.Data.OpenMenus.Waypoint {
+			return errors.New("failed to open waypoint menu")
+		}
+		if ctx.Data.LegacyGraphics {
+			actTabX := ui.WpTabStartXClassic + (wpCoords.Tab-1)*ui.WpTabSizeXClassic + (ui.WpTabSizeXClassic / 2)
+			ctx.HID.Click(game.LeftButton, actTabX, ui.WpTabStartYClassic)
+		} else {
+			actTabX := ui.WpTabStartX + (wpCoords.Tab-1)*ui.WpTabSizeX + (ui.WpTabSizeX / 2)
+			ctx.HID.Click(game.LeftButton, actTabX, ui.WpTabStartY)
+		}
+
+		utils.Sleep(200)
+
+		if ctx.Data.LegacyGraphics {
+			areaBtnY := ui.WpListStartYClassic + (wpCoords.Row-1)*ui.WpAreaBtnHeightClassic + (ui.WpAreaBtnHeightClassic / 2)
+			ctx.HID.Click(game.LeftButton, ui.WpListPositionXClassic, areaBtnY)
+		} else {
+			areaBtnY := ui.WpListStartY + (wpCoords.Row-1)*ui.WpAreaBtnHeight + (ui.WpAreaBtnHeight / 2)
+			ctx.HID.Click(game.LeftButton, ui.WpListPositionX, areaBtnY)
+		}
+		ctx.WaitForGameToLoad()
+		utils.Sleep(200)
+		ctx.RefreshGameData()
+	}
+	if ctx.Data.PlayerUnit.Area == dest {
 		return nil
 	}
+	return errors.New("failed to select waypoint destination")
+}
 
-	traverseAreas = append(traverseAreas, finalDestination)
+func nearestWaypointArea(dest area.ID) (area.ID, area.WPAddress, error) {
+	if wpCoords, ok := area.WPAddresses[dest]; ok {
+		return dest, wpCoords, nil
+	}
 
-	// Next keep traversing all the areas from the previous available waypoint until we reach the destination, trying to discover WPs during the way
-	ctx.Logger.Info("Traversing areas to reach destination", slog.Any("areas", traverseAreas))
+	act := dest.Act()
+	visited := map[area.ID]struct{}{dest: {}}
+	queue := []area.ID{dest}
 
-	for i, dst := range traverseAreas {
-		if i > 0 {
-			err := MoveToArea(dst)
-			if err != nil {
-				return err
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		for _, next := range staticNeighbors(current) {
+			if next == 0 || next.Act() != act {
+				continue
+			}
+			if _, ok := visited[next]; ok {
+				continue
+			}
+			visited[next] = struct{}{}
+
+			if wpCoords, ok := area.WPAddresses[next]; ok {
+				return next, wpCoords, nil
 			}
 
-			err = DiscoverWaypoint()
-			if err != nil {
-				return err
-			}
+			queue = append(queue, next)
 		}
 	}
 
-	return nil
+	return 0, area.WPAddress{}, fmt.Errorf("failed to locate a waypoint reachable from %s", area.Areas[dest].Name)
 }
