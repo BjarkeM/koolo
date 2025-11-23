@@ -168,9 +168,29 @@ func (s *baseSupervisor) logGameStart(runs []run.Run) {
 }
 
 func (s *baseSupervisor) waitUntilCharacterSelectionScreen() error {
+	if s.bot.ctx.Manager.InGame() {
+		s.bot.ctx.Logger.Info("Already in game, skipping character selection wait")
+		return nil
+	}
+
+	if s.bot.ctx.GameReader.IsInLobby() {
+		s.bot.ctx.Logger.Info("Already in lobby, skipping character selection wait")
+		return nil
+	}
+
 	s.bot.ctx.Logger.Info("Waiting for character selection screen...")
 
 	for !s.bot.ctx.GameReader.IsInCharacterSelectionScreen() {
+		if s.bot.ctx.Manager.InGame() {
+			s.bot.ctx.Logger.Info("Detected running game while waiting for character selection, aborting wait")
+			return nil
+		}
+
+		if s.bot.ctx.GameReader.IsInLobby() {
+			s.bot.ctx.Logger.Info("Reached lobby while waiting for character selection, aborting wait")
+			return nil
+		}
+
 		// Spam left click to skip to the char select screen
 		s.bot.ctx.HID.Click(game.LeftButton, 100, 100)
 		time.Sleep(250 * time.Millisecond)
