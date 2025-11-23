@@ -7,6 +7,7 @@ import (
 	"github.com/hectorgimenez/d2go/pkg/data/item"
 	"github.com/hectorgimenez/d2go/pkg/data/object"
 	"github.com/hectorgimenez/d2go/pkg/data/skill"
+	"github.com/hectorgimenez/d2go/pkg/data/stat"
 	"github.com/hectorgimenez/koolo/internal/context"
 	"github.com/hectorgimenez/koolo/internal/game"
 	"github.com/hectorgimenez/koolo/internal/ui"
@@ -19,6 +20,28 @@ func OpenPortal() error {
 	ctx := context.Get()
 	ctx.SetLastStep("OpenPortal")
 	tpItem, tpItemFound := ctx.Data.Inventory.Find(item.TomeOfTownPortal, item.LocationInventory)
+	_, tpScrollItemFound := ctx.Data.Inventory.Find(item.ScrollOfTownPortal, item.LocationInventory)
+
+	canTP := false
+
+	if tpItemFound {
+		qty, found := tpItem.FindStat(stat.Quantity, 0)
+
+		if found && qty.Value > 0 {
+			canTP = true
+		} else {
+			tpItemFound = false
+		}
+	}
+
+	if !canTP && tpScrollItemFound {
+		canTP = true
+
+	}
+
+	if !canTP {
+		return errors.New("no town portal book/scroll available, ensure tome or scrolls are regularly replenished")
+	}
 
 	// Portal cooldown: Prevent rapid portal creation during lag
 	// Check last portal time to avoid spam during network delays
