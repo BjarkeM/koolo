@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hectorgimenez/d2go/pkg/data/area"
+	"github.com/hectorgimenez/koolo/internal/action/step"
 	"github.com/hectorgimenez/koolo/internal/context"
 	"github.com/hectorgimenez/koolo/internal/game"
 	"github.com/hectorgimenez/koolo/internal/ui"
@@ -35,7 +36,13 @@ func WayPoint(dest area.ID) error {
 
 	if wpArea != ctx.Data.PlayerUnit.Area {
 		if err := selectWaypoint(ctx, wpCoords, wpArea); err != nil {
-			return err
+			if ctx.Data.PlayerUnit.Area.Act() != dest.Act() {
+				// we can't fallback to walking if the acts are different
+				return fmt.Errorf("failed to select waypoint to %s: %w", area.Areas[dest].Name, err)
+			}
+			ctx.Logger.Warn("Waypoint selection failed, walking remainder", slog.String("destination", area.Areas[dest].Name), slog.String("reason", err.Error()))
+			step.CloseAllMenus()
+			return traverseRemainder(ctx.Data.PlayerUnit.Area, dest)
 		}
 		ctx.WaitForGameToLoad()
 	}
