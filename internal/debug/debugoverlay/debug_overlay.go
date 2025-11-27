@@ -463,20 +463,6 @@ func (po *DebugOverlay) collectPath(player data.Position) []overlayPoint {
 	return points
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func withinRange(dx, dy int) bool {
 	return math.Abs(float64(dx)) <= overlayRange && math.Abs(float64(dy)) <= overlayRange
 }
