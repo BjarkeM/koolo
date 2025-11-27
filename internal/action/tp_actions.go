@@ -85,7 +85,7 @@ func ReturnTown() error {
 	if initialInteractionErr != nil {
 		ctx.Logger.Debug("Initial portal interaction failed, attempting to clear area.", "error", initialInteractionErr)
 		// If initial interaction fails, THEN clear the area
-		if err = ClearAreaAroundPosition(portal.Position, 14, data.MonsterAnyFilter()); err != nil {
+		if err = ClearAreaAroundPosition(portal.Position, 8, data.MonsterAnyFilter()); err != nil {
 			ctx.Logger.Warn("Error clearing area around portal", "error", err)
 			// Even if clearing area fails, check if we died during the process
 			if errCheck := checkPlayerDeathForTP(ctx); errCheck != nil {
