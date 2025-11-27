@@ -92,7 +92,7 @@ func CalculatePath(g *game.Grid, start, goal data.Position, canTeleport bool) ([
 
 			// Determine teleport streak
 			teleportStreak := 0
-			if tileType == game.CollisionTypeTeleportOver || (tileType == game.CollisionTypeThickened && canTeleport) {
+			if tileType == game.CollisionTypeTeleportOver {
 				teleportStreak = current.TpStreak + 1
 			} else {
 				teleportStreak = 0
