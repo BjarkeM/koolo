@@ -20,27 +20,13 @@ func OpenPortal() error {
 	ctx := context.Get()
 	ctx.SetLastStep("OpenPortal")
 	tpItem, tpItemFound := ctx.Data.Inventory.Find(item.TomeOfTownPortal, item.LocationInventory)
-	_, tpScrollItemFound := ctx.Data.Inventory.Find(item.ScrollOfTownPortal, item.LocationInventory)
-
-	canTP := false
 
 	if tpItemFound {
 		qty, found := tpItem.FindStat(stat.Quantity, 0)
 
-		if found && qty.Value > 0 {
-			canTP = true
-		} else {
+		if !(found && qty.Value > 0) {
 			tpItemFound = false
 		}
-	}
-
-	if !canTP && tpScrollItemFound {
-		canTP = true
-
-	}
-
-	if !canTP {
-		return errors.New("no town portal book/scroll available, ensure tome or scrolls are regularly replenished")
 	}
 
 	// Portal cooldown: Prevent rapid portal creation during lag
