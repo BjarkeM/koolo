@@ -201,6 +201,11 @@ func InteractObjectMouse(obj data.Object, isCompletedFn func() bool) error {
 			objectX := o.Position.X - 2
 			objectY := o.Position.Y - 2
 
+			distance := ctx.PathFinder.DistanceFromMe(o.Position)
+			if distance > 15 {
+				return fmt.Errorf("object %v is too far away, current distance: %d", o.Name, distance)
+			}
+
 			mX, mY := ui.GameCoordsToScreenCords(objectX, objectY)
 			// In order to avoid the spiral (super slow and shitty) let's try to point the mouse to the top of the portal directly
 			if mouseOverAttempts%2 == 0 && o.IsPortal() {
