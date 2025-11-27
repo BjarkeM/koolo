@@ -23,9 +23,17 @@ func WayPoint(dest area.ID) error {
 		return nil
 	}
 
-	wpArea, wpCoords, err := nearestWaypointArea(dest)
+	wpArea, wpCoords, hasWP, err := nearestWaypointArea(ctx, dest)
 	if err != nil {
 		return err
+	}
+
+	if !hasWP {
+		ctx.Logger.Info("No usable waypoint found, walking to destination", slog.String("destination", dest.Area().Name))
+		if err := traverseRemainder(ctx.Data.PlayerUnit.Area, dest); err != nil {
+			return err
+		}
+		return verifyArrival(ctx, dest)
 	}
 
 	if err := ensureWaypointAccess(ctx); err != nil {
@@ -51,14 +59,8 @@ func WayPoint(dest area.ID) error {
 		return err
 	}
 
-	// Verify that we've reached the destination
-	ctx.WaitForGameToLoad()
-	ctx.RefreshGameData()
-	if err := ensureAreaSync(ctx, dest); err != nil {
-		return fmt.Errorf("failed to reach destination area %s using waypoint: %w", area.Areas[dest].Name, err)
-	}
-	if ctx.Data.PlayerUnit.Area != dest {
-		return fmt.Errorf("failed to reach destination area %s using waypoint", area.Areas[dest].Name)
+	if err := verifyArrival(ctx, dest); err != nil {
+		return err
 	}
 
 	// apply buffs after exiting a waypoint if configured
@@ -100,6 +102,18 @@ func traverseRemainder(wpArea, dest area.ID) error {
 		}
 	}
 
+	return nil
+}
+
+func verifyArrival(ctx *context.Status, dest area.ID) error {
+	ctx.WaitForGameToLoad()
+	ctx.RefreshGameData()
+	if err := ensureAreaSync(ctx, dest); err != nil {
+		return fmt.Errorf("failed to reach destination area %s using waypoint: %w", area.Areas[dest].Name, err)
+	}
+	if ctx.Data.PlayerUnit.Area != dest {
+		return fmt.Errorf("failed to reach destination area %s using waypoint", area.Areas[dest].Name)
+	}
 	return nil
 }
 
@@ -196,12 +210,16 @@ func selectWaypoint(ctx *context.Status, wpCoords area.WPAddress, dest area.ID) 
 	return errors.New("failed to select waypoint destination")
 }
 
-func nearestWaypointArea(dest area.ID) (area.ID, area.WPAddress, error) {
+func nearestWaypointArea(ctx *context.Status, dest area.ID) (area.ID, area.WPAddress, bool, error) {
+	act := dest.Act()
+
+	wpMap := availableWaypointMap(ctx)
 	if wpCoords, ok := area.WPAddresses[dest]; ok {
-		return dest, wpCoords, nil
+		if _, known := wpMap[dest]; known {
+			return dest, wpCoords, true, nil
+		}
 	}
 
-	act := dest.Act()
 	visited := map[area.ID]struct{}{dest: {}}
 	queue := []area.ID{dest}
 
@@ -219,12 +237,19 @@ func nearestWaypointArea(dest area.ID) (area.ID, area.WPAddress, error) {
 			visited[next] = struct{}{}
 
 			if wpCoords, ok := area.WPAddresses[next]; ok {
-				return next, wpCoords, nil
+				if _, known := wpMap[next]; known {
+					return next, wpCoords, true, nil
+				}
 			}
 
 			queue = append(queue, next)
 		}
 	}
 
-	return 0, area.WPAddress{}, fmt.Errorf("failed to locate a waypoint reachable from %s", area.Areas[dest].Name)
+	if act == ctx.Data.PlayerUnit.Area.Act() {
+		// no waypoint found but we can walk, let the caller handle it
+		return 0, area.WPAddress{}, false, nil
+	}
+
+	return 0, area.WPAddress{}, false, fmt.Errorf("failed to locate a waypoint reachable from %s", area.Areas[dest].Name)
 }
