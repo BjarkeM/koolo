@@ -92,7 +92,7 @@ func CalculatePath(g *game.Grid, start, goal data.Position, canTeleport bool) ([
 
 			// Determine teleport streak
 			teleportStreak := 0
-			if tileType == game.CollisionTypeTeleportOver {
+			if tileType == game.CollisionTypeTeleportOver || (tileType == game.CollisionTypeThickened && canTeleport) {
 				teleportStreak = current.TpStreak + 1
 			} else {
 				teleportStreak = 0
@@ -136,10 +136,16 @@ func updateNeighbors(grid *game.Grid, node *Node, neighbors *[]data.Position, ca
 			return true
 		}
 		collisionType := grid.CollisionGrid[py][px]
-		if collisionType == game.CollisionTypeNonWalkable || collisionType == game.CollisionTypeThickened {
+		if collisionType == game.CollisionTypeNonWalkable {
 			return true
 		}
-		return !canTeleport && collisionType == game.CollisionTypeTeleportOver
+		if collisionType == game.CollisionTypeThickened {
+			return !canTeleport
+		}
+		if collisionType == game.CollisionTypeTeleportOver {
+			return !canTeleport
+		}
+		return false
 	}
 
 	for _, d := range directions {
@@ -180,6 +186,9 @@ func getCost(tileType game.CollisionType, canTeleport bool) int {
 		}
 		return math.MaxInt32
 	case game.CollisionTypeThickened:
+		if canTeleport {
+			return 1
+		}
 		return math.MaxInt32
 	default:
 		return math.MaxInt32

@@ -101,16 +101,6 @@ func (pf *PathFinder) GetPathFrom(from, to data.Position) (Path, int, bool) {
 		}
 	}
 
-	if canTeleport {
-		for y := 0; y < len(grid.CollisionGrid); y++ {
-			for x := 0; x < len(grid.CollisionGrid[y]); x++ {
-				if grid.CollisionGrid[y][x] == game.CollisionTypeThickened {
-					grid.CollisionGrid[y][x] = game.CollisionTypeTeleportOver
-				}
-			}
-		}
-	}
-
 	if !grid.IsWalkable(worldTo) {
 		if walkableTo, found := pf.findNearbyWalkablePositionInGrid(grid, worldTo); found {
 			worldTo = walkableTo
