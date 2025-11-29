@@ -13,8 +13,7 @@ const tileColors = {
   3: '#c62828',
   4: '#ff8f00',
   5: '#593a78',
-  6: '#ff0000',
-  7: '#ffffff'
+  6: '#ff0000'
 };
 function tileColor(type) {
   return Object.prototype.hasOwnProperty.call(tileColors, type)
@@ -27,7 +26,6 @@ function renderLegend() {
     { label: 'Low priority', color: tileColors[2] },
     { label: 'Non-walkable', color: tileColors[0] },
     { label: 'Thickened wall', color: tileColors[6] },
-    { label: 'Diagonal tile', color: tileColors[7] },
     { label: 'Teleport over', color: tileColors[5] },
     { label: 'Objects', color: '#ffeb3b' },
     { label: 'Monsters', color: '#ff7043', shape: 'circle' },

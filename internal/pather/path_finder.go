@@ -129,7 +129,7 @@ func (pf *PathFinder) GetPathFrom(from, to data.Position) (Path, int, bool) {
 					continue
 				}
 				neighborType := grid.CollisionGrid[y][x]
-				if neighborType != game.CollisionTypeWalkable && neighborType != game.CollisionTypeDiagonalTile {
+				if neighborType != game.CollisionTypeWalkable {
 					continue
 				}
 
@@ -159,7 +159,7 @@ func (pf *PathFinder) GetPathFrom(from, to data.Position) (Path, int, bool) {
 				continue
 			}
 			t := grid.CollisionGrid[relativePos.Y][relativePos.X]
-			if t == game.CollisionTypeWalkable || t == game.CollisionTypeLowPriority || t == game.CollisionTypeDiagonalTile {
+			if t == game.CollisionTypeWalkable || t == game.CollisionTypeLowPriority {
 				grid.CollisionGrid[relativePos.Y][relativePos.X] = game.CollisionTypeTeleportOver
 			}
 		}

@@ -178,8 +178,6 @@ func getCost(tileType game.CollisionType, canTeleport bool) int {
 		return 4 // Soft blocker
 	case game.CollisionTypeLowPriority:
 		return 20
-	case game.CollisionTypeDiagonalTile:
-		return 4
 	case game.CollisionTypeTeleportOver:
 		if canTeleport {
 			return 1

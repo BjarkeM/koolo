@@ -421,8 +421,7 @@ func (po *DebugOverlay) collectTiles(dataSnapshot *game.Data, player data.Positi
 				game.CollisionTypeNonWalkable,
 				game.CollisionTypeTeleportOver,
 				game.CollisionTypeObject,
-				game.CollisionTypeThickened,
-				game.CollisionTypeDiagonalTile:
+				game.CollisionTypeThickened:
 			default:
 				continue
 			}
