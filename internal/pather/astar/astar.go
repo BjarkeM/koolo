@@ -136,16 +136,16 @@ func updateNeighbors(grid *game.Grid, node *Node, neighbors *[]data.Position, ca
 			return true
 		}
 		collisionType := grid.CollisionGrid[py][px]
-		if collisionType == game.CollisionTypeNonWalkable {
+		switch collisionType {
+		case game.CollisionTypeNonWalkable:
 			return true
-		}
-		if collisionType == game.CollisionTypeThickened {
+		case game.CollisionTypeTeleportOver:
 			return !canTeleport
-		}
-		if collisionType == game.CollisionTypeTeleportOver {
+		case game.CollisionTypeThickened:
 			return !canTeleport
+		default:
+			return false
 		}
-		return false
 	}
 
 	for _, d := range directions {
