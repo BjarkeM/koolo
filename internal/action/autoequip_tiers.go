@@ -704,3 +704,8 @@ func getMaxSkillTabPage() int {
 
 	return maxPage
 }
+
+// wrapper for barb leveling
+func CalculateItemScore(itm data.Item) float64 {
+	return calculateGeneralScore(itm)
+}

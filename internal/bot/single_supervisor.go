@@ -189,6 +189,22 @@ func (s *SinglePlayerSupervisor) Start() error {
 			if err = s.waitUntilCharacterSelectionScreen(); err != nil {
 				return fmt.Errorf("error waiting for character selection screen: %w", err)
 			}
+			// warning for barb to set keybinds
+			if s.bot.ctx.CharacterCfg.Character.Class == "barb_leveling" {
+				lvl, _ := s.bot.ctx.Data.PlayerUnit.FindStat(stat.Level, 0)
+				if lvl.Value == 1 {
+					warningText := "IMPORTANT: The Leveling Barbarian requires F9-F12 keybindings for Skills 9-12!\n\n"
+					warningText += "Please set in the Controller Settings (Diablo 2):\n"
+					warningText += "- F9 for Skill 9\n"
+					warningText += "- F10 for Skill 10\n"
+					warningText += "- F11 for Skill 11\n"
+					warningText += "- F12 for Skill 12\n\n"
+					warningText += "Bot will be paused..."
+
+					utils.ShowDialog("F9-F12 Keybindings Required", warningText)
+					s.TogglePause()
+				}
+			}
 		}
 
 		// LOGIC OUTSIDE OF GAME (MENUS)

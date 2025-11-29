@@ -66,7 +66,7 @@ inventory:
   rejuvPotionCount: 0     # Number of rejuvenation potions to keep in inventory
 
 character:
-  class: sorceress # Allowed values: sorceress, lightning, hammerdin, foh, paladin (leveling only)
+  class: sorceress # Allowed values: sorceress, lightning, hammerdin, foh, paladin (leveling only), barb_leveling
   useMerc: true
   stashToShared: false
   useTeleport: true # If set to false, bot will not use teleport skill and will walk to the destination
@@ -75,6 +75,13 @@ character:
   useExtraBuffs: false # If true, bot will enable the extra buffs functionality
   buffOnNewArea: false # If true, bot will apply buffs when entering a new area
   buffAfterWP: false # If true, bot will apply buffs after using a waypoint
+  barb_leveling:
+    use_howl: true # Use Howl skill to scare away monsters
+    howl_cooldown: 8 # Cooldown in seconds between Howl casts
+    howl_min_monsters: 4 # Minimum number of monsters in range to use Howl
+    use_battlecry: true # Use Battle Cry skill to reduce enemy damage and defense
+    battlecry_cooldown: 6 # Cooldown in seconds between Battle Cry casts
+    battlecry_min_monsters: 1 # Minimum number of monsters in range to use Battle Cry
 
 game:
   minGoldPickupThreshold: 500000 # If total gold amount is less than this, bot will pick up and sell magic+ items

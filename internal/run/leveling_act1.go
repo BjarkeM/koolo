@@ -156,12 +156,20 @@ func (a Leveling) act1() error {
 	}
 
 	// Countess farming for runes
-	if a.ctx.CharacterCfg.Game.Difficulty == difficulty.Normal && a.ctx.Data.Quests[quest.Act1TheSearchForCain].Completed() && lvl.Value >= 6 && (lvl.Value < 12 || lvl.Value < 16 && (a.ctx.CharacterCfg.Character.Class == "paladin" || a.ctx.CharacterCfg.Character.Class == "necromancer")) {
-		a.ctx.Logger.Info("Farming Countess for runes.")
-		if a.ctx.CharacterCfg.Character.Class == "sorceress_leveling" {
-			a.ctx.CharacterCfg.Character.ClearPathDist = 15
+	if a.ctx.CharacterCfg.Game.Difficulty == difficulty.Normal && a.ctx.Data.Quests[quest.Act1TheSearchForCain].Completed() && lvl.Value >= 6 && (lvl.Value < 12 || lvl.Value < 16 && (a.ctx.CharacterCfg.Character.Class == "paladin" || a.ctx.CharacterCfg.Character.Class == "necromancer" || a.ctx.CharacterCfg.Character.Class == "barb_leveling")) {
+		// Special case for Barbarian Leveling
+		if a.ctx.CharacterCfg.Character.Class == "barb_leveling" {
+			if a.barbRunewords() {
+				a.ctx.Logger.Info("Farming Countess for Steel/Malice runes.")
+				return NewCountess().Run(nil)
+			}
+		} else {
+			a.ctx.Logger.Info("Farming Countess for runes.")
+			if a.ctx.CharacterCfg.Character.Class == "sorceress_leveling" {
+				a.ctx.CharacterCfg.Character.ClearPathDist = 15
+			}
+			return NewCountess().Run(nil)
 		}
-		return NewCountess().Run(nil)
 	}
 
 	if a.ctx.CharacterCfg.Game.Difficulty == difficulty.Nightmare && lvl.Value < 50 && a.ctx.Data.Quests[quest.Act1DenOfEvil].Completed() && a.shouldFarmCountessForRunes() {
@@ -405,5 +413,42 @@ func (a Leveling) shouldFarmCountessForRunes() bool {
 	}
 
 	a.ctx.Logger.Info("All required runes are present. Skipping Countess farm.")
+	return false
+}
+
+func (a Leveling) barbRunewords() bool {
+	equippedItems := a.ctx.Data.Inventory.ByLocation(item.LocationEquipped)
+	for _, itm := range equippedItems {
+		if itm.IsRuneword && (itm.RunewordName == item.RunewordSteel || itm.RunewordName == item.RunewordMalice) {
+			return false
+		}
+	}
+
+	requiredRunes := map[string]int{
+		"TirRune": 2,
+		"ElRune":  4,
+		"IthRune": 2,
+		"EthRune": 3,
+		"Ralune":  1,
+		"OrtRune": 1,
+		"TalRune": 1,
+	}
+
+	ownedRunes := make(map[string]int)
+	itemsInStash := a.ctx.Data.Inventory.ByLocation(item.LocationInventory, item.LocationStash, item.LocationSharedStash)
+
+	for _, itm := range itemsInStash {
+		itemName := string(itm.Name)
+		if _, isRequired := requiredRunes[itemName]; isRequired {
+			ownedRunes[itemName]++
+		}
+	}
+
+	for runeName, requiredCount := range requiredRunes {
+		if ownedRunes[runeName] < requiredCount {
+			return true
+		}
+	}
+
 	return false
 }

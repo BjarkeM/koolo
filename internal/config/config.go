@@ -142,6 +142,11 @@ type CharacterCfg struct {
 			FindItemSwitch              bool `yaml:"find_item_switch"`
 			SkipPotionPickupInTravincal bool `yaml:"skip_potion_pickup_in_travincal"`
 			UseHowl                     bool `yaml:"use_howl"`
+			HowlCooldown                int  `yaml:"howl_cooldown"`
+			HowlMinMonsters             int  `yaml:"howl_min_monsters"`
+			UseBattleCry                bool `yaml:"use_battlecry"`
+			BattleCryCooldown            int  `yaml:"battlecry_cooldown"`
+			BattleCryMinMonsters         int  `yaml:"battlecry_min_monsters"`
 		} `yaml:"berserker_barb"`
 		BlizzardSorceress struct {
 			UseMoatTrick        bool `yaml:"use_moat_trick"`
@@ -151,6 +156,14 @@ type CharacterCfg struct {
 			UseMoatTrick        bool `yaml:"use_moat_trick"`
 			UseStaticOnMephisto bool `yaml:"use_static_on_mephisto"`
 		} `yaml:"sorceress_leveling"`
+		BarbLeveling struct {
+			UseHowl              bool `yaml:"use_howl"`
+			HowlCooldown         int  `yaml:"howl_cooldown"`
+			HowlMinMonsters      int  `yaml:"howl_min_monsters"`
+			UseBattleCry         bool `yaml:"use_battlecry"`
+			BattleCryCooldown    int  `yaml:"battlecry_cooldown"`
+			BattleCryMinMonsters int  `yaml:"battlecry_min_monsters"`
+		} `yaml:"barb_leveling"`
 		NovaSorceress struct {
 			BossStaticThreshold int `yaml:"boss_static_threshold"`
 		} `yaml:"nova_sorceress"`
@@ -161,6 +174,19 @@ type CharacterCfg struct {
 			UseBladesOfIce    bool `yaml:"useBladesOfIce"`
 			UseFistsOfFire    bool `yaml:"useFistsOfFire"`
 		} `yaml:"mosaic_sin"`
+		WarcryBarb struct {
+			FindItemSwitch              bool `yaml:"find_item_switch"`
+			SkipPotionPickupInTravincal bool `yaml:"skip_potion_pickup_in_travincal"`
+			UseHowl                     bool `yaml:"use_howl"`
+			HowlCooldown                int  `yaml:"howl_cooldown"`
+			HowlMinMonsters             int  `yaml:"howl_min_monsters"`
+			UseBattleCry                bool `yaml:"use_battlecry"`
+			BattleCryCooldown           int  `yaml:"battlecry_cooldown"`
+			BattleCryMinMonsters        int  `yaml:"battlecry_min_monsters"`
+			UseGrimWard                 bool `yaml:"use_grim_ward"`
+			HorkNormalMonsters          bool `yaml:"hork_normal_monsters"`
+			HorkMonsterCheckRange       int  `yaml:"hork_monster_check_range"`
+		} `yaml:"warcry_barb"`
 	} `yaml:"character"`
 
 	Game struct {

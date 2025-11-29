@@ -165,6 +165,9 @@ func currentRunewordBaseTier(ctx *context.Status, recipe Runeword, baseType stri
 }
 
 func hasBaseForRunewordRecipe(items []data.Item, recipe Runeword) (data.Item, bool) {
+	ctx := context.Get()
+	isBarbLeveling := ctx.CharacterCfg.Character.Class == "barb_leveling"
+
 	var validBases []data.Item
 	for _, itm := range items {
 		itemType := itm.Type().Code
@@ -178,6 +181,19 @@ func hasBaseForRunewordRecipe(items []data.Item, recipe Runeword) (data.Item, bo
 		}
 		if !isValidType {
 			continue
+		}
+
+		// exception to use only 1-handed maces/clubs for steel/malice/strength for barb leveling
+		if isBarbLeveling && (recipe.Name == item.RunewordSteel || recipe.Name == item.RunewordMalice || recipe.Name == item.RunewordStrength) {
+			oneHandMaceTypes := []string{item.TypeMace, item.TypeClub}
+			if !slices.Contains(oneHandMaceTypes, itemType) {
+				continue
+			}
+			_, hasTwoHandedMin := itm.BaseStats.FindStat(stat.TwoHandedMinDamage, 0)
+			_, hasTwoHandedMax := itm.BaseStats.FindStat(stat.TwoHandedMaxDamage, 0)
+			if hasTwoHandedMin || hasTwoHandedMax {
+				continue
+			}
 		}
 
 		sockets, found := itm.FindStat(stat.NumSockets, 0)

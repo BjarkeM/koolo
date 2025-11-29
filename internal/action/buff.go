@@ -141,6 +141,12 @@ func IsRebuffRequired() bool {
 			if buff == skill.BoneArmor && !ctx.Data.PlayerUnit.States.HasState(state.Bonearmor) {
 				return true
 			}
+			// leveling barb buffs
+			if (buff == skill.Shout && !ctx.Data.PlayerUnit.States.HasState(state.Shout)) ||
+				(buff == skill.BattleOrders && !ctx.Data.PlayerUnit.States.HasState(state.Battleorders)) ||
+				(buff == skill.BattleCommand && !ctx.Data.PlayerUnit.States.HasState(state.Battlecommand)) {
+				return true
+			}
 		}
 	}
 

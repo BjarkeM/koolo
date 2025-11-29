@@ -17,6 +17,8 @@ func BuildCharacter(ctx *context.Context) (context.Character, error) {
 
 	if len(ctx.CharacterCfg.Game.Runs) > 0 && (ctx.CharacterCfg.Game.Runs[0] == "leveling" || ctx.CharacterCfg.Game.Runs[0] == "leveling_sequence") {
 		switch strings.ToLower(ctx.CharacterCfg.Character.Class) {
+		case "barb", "barb_leveling":
+			return BarbLeveling{BaseCharacter: bc}, nil
 		case "sorceress_leveling":
 			return SorceressLeveling{BaseCharacter: bc}, nil
 		case "necromancer":
@@ -31,7 +33,7 @@ func BuildCharacter(ctx *context.Context) (context.Character, error) {
 			return AmazonLeveling{BaseCharacter: bc}, nil
 		}
 
-		return nil, fmt.Errorf("leveling only available for sorceress, assassin, necromancer, druid and paladin")
+		return nil, fmt.Errorf("leveling only available for sorceress, assassin, necromancer, druid, barbarian and paladin")
 	}
 
 	switch strings.ToLower(ctx.CharacterCfg.Character.Class) {
@@ -61,6 +63,8 @@ func BuildCharacter(ctx *context.Context) (context.Character, error) {
 		return Javazon{BaseCharacter: bc}, nil
 	case "berserker":
 		return &Berserker{BaseCharacter: bc}, nil // Return a pointer to Berserker
+	case "warcry_barb":
+		return &WarcryBarb{BaseCharacter: bc}, nil
 	case "development":
 		return DevelopmentCharacter{BaseCharacter: bc}, nil
 	}

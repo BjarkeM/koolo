@@ -491,6 +491,10 @@ func DropItem(i data.Item) {
 func shouldNotifyAboutStashing(i data.Item) bool {
 	ctx := context.Get()
 
+	if ctx.IsBossEquipmentActive {
+		return false
+	}
+
 	ctx.Logger.Debug(fmt.Sprintf("Checking if we should notify about stashing %s %v", i.Name, i.Desc()))
 	// Don't notify about gems
 	if strings.Contains(i.Desc().Type, "gem") {

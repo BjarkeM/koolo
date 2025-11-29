@@ -10,6 +10,11 @@ import (
 	"github.com/hectorgimenez/koolo/internal/context"
 )
 
+// special barb leveling handling
+type bossEquipmentPreparer interface {
+	PrepareBossEquipment(bossNPC npc.ID)
+}
+
 type Izual struct {
 	ctx *context.Status
 }
@@ -55,6 +60,11 @@ func (i Izual) Run(parameters *RunParameters) error {
 		return err
 	}
 	action.Buff()
+
+	//special barb leveling handling
+	if preparer, ok := i.ctx.Char.(bossEquipmentPreparer); ok {
+		preparer.PrepareBossEquipment(npc.Izual)
+	}
 
 	// Once Izual is found, move to him
 	err = action.MoveTo(func() (data.Position, bool) {

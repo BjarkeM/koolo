@@ -11,6 +11,13 @@ set REQUIRED_GARBLE_VERSION=0.14.2
 :: Change to the script's directory
 cd /d "%~dp0"
 
+:: Use a static build folder to avoid temp paths being flagged by AV
+set "STATIC_BUILD_DIR=%cd%\build\tmp"
+if not exist "%STATIC_BUILD_DIR%" mkdir "%STATIC_BUILD_DIR%"
+set "GOCACHE=%STATIC_BUILD_DIR%\gocache"
+set "GOTMPDIR=%STATIC_BUILD_DIR%"
+call :print_info "Using static build folder: %STATIC_BUILD_DIR%"
+
 call :print_header "Starting Koolo Build Process"
 
 :: Check for Go installation
@@ -176,6 +183,10 @@ del garble.log
 
 :: Check if the executable was actually created
 if exist "%OUTPUT_EXE%" (
+    if exist "%STATIC_BUILD_DIR%" (
+        call :print_step "Cleaning up temporary build folder"
+        rmdir /s /q "%STATIC_BUILD_DIR%"
+    )
     call :print_success "Successfully built obfuscated executable: %BUILD_ID%.exe"
 ) else (
     call :print_error "Failed to build Koolo binary - executable was not created"

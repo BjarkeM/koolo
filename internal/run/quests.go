@@ -639,6 +639,11 @@ func (a Quests) killIzualQuest() error {
 	}
 	action.Buff()
 
+	// special barb leveling handling
+	if preparer, ok := a.ctx.Char.(bossEquipmentPreparer); ok {
+		preparer.PrepareBossEquipment(npc.Izual)
+	}
+
 	// Start a timer to ensure we find Izual within 5 minutes
 	startTime := time.Now()
 	timeout := time.Minute * 10

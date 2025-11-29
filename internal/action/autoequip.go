@@ -9,6 +9,7 @@ import (
 	"github.com/hectorgimenez/d2go/pkg/data"
 	"github.com/hectorgimenez/d2go/pkg/data/item"
 	"github.com/hectorgimenez/d2go/pkg/data/npc"
+	"github.com/hectorgimenez/d2go/pkg/data/skill"
 	"github.com/hectorgimenez/d2go/pkg/data/stat"
 	"github.com/hectorgimenez/koolo/internal/action/step"
 	"github.com/hectorgimenez/koolo/internal/context"
@@ -52,14 +53,24 @@ var (
 		"AmuletOfTheViper",
 		"KhalimsFlail",
 		"KhalimsWill",
-		"TheGidbinn",
-		"HellforgeHammer",
 	}
 )
+
+func isBarbLevelingCharacter() bool {
+	ctx := context.Get()
+	return ctx.CharacterCfg.Character.Class == "barb_leveling"
+}
 
 // AutoEquip evaluates and equips items for both player and mercenary
 func AutoEquip() error {
 	ctx := context.Get()
+
+	// skip autoequip for barb leveling during boss town routines
+	if ctx.IsBossEquipmentActive {
+		ctx.Logger.Debug("Boss equipment is active, skipping AutoEquip to preserve boss-specific equipment")
+		return nil
+	}
+
 	// Safety mechanism to prevent infinite loops
 	maxIterations := 30
 	currentIteration := 0
@@ -265,6 +276,13 @@ func isEquippable(newItem data.Item, bodyloc item.LocationType, target item.Loca
 	}
 
 	isSorc := ctx.CharacterCfg.Character.Class == "sorceress_leveling"
+	isBarbLeveling := isBarbLevelingCharacter()
+
+	if target == item.LocationEquipped && isBarbLeveling {
+		if !barblogic(newItem, bodyloc) {
+			return false
+		}
+	}
 
 	if _, isTwoHanded := newItem.FindStat(stat.TwoHandedMinDamage, 0); isTwoHanded {
 		// We need to fetch the level stat safely.
@@ -388,6 +406,19 @@ func isValidLocation(i data.Item, bodyLoc item.LocationType, target item.Locatio
 
 		switch class {
 		case data.Barbarian:
+			// barb_leveling shield 31+
+			isBarbLeveling := isBarbLevelingCharacter()
+			if isBarbLeveling {
+				playerLevel := 0
+				if lvl, found := ctx.Data.PlayerUnit.FindStat(stat.Level, 0); found {
+					playerLevel = lvl.Value
+				}
+				hasWarCry := ctx.Data.PlayerUnit.Skills[skill.WarCry].Level > 0
+				shieldsAllowed := playerLevel >= 31 || hasWarCry
+				if shieldsAllowed {
+					return false
+				}
+			}
 			_, isOneHanded := i.FindStat(stat.MaxDamage, 0)
 			_, isTwoHanded := i.FindStat(stat.TwoHandedMaxDamage, 0)
 			return isOneHanded || (isTwoHanded && itemType == "swor")
@@ -483,10 +514,11 @@ func evaluateItems(items []data.Item, target item.LocationType, scoreFunc func(d
 	// "Best Combo" logic for Two-Handed Weapons
 	if target == item.LocationEquipped {
 		class := ctx.Data.PlayerUnit.Class
+		isBarbLeveling := isBarbLevelingCharacter()
 
 		if items, ok := itemsByLoc[item.LocLeftArm]; ok && len(items) > 0 {
 			if _, found := items[0].FindStat(stat.TwoHandedMinDamage, 0); found {
-				if class != data.Barbarian || items[0].Desc().Type != "swor" {
+				if !isBarbLeveling && (class != data.Barbarian || items[0].Desc().Type != "swor") {
 					var bestComboScore float64
 					for _, itm := range items {
 						if _, isTwoHanded := itm.FindStat(stat.TwoHandedMinDamage, 0); !isTwoHanded {
@@ -528,7 +560,31 @@ func equipBestItems(itemsByLoc map[item.LocationType][]data.Item, itemScores map
 	ctx := context.Get()
 	equippedSomething := false
 
-	for loc, items := range itemsByLoc {
+	// special logik for barb leveling
+	isBarbLeveling := isBarbLevelingCharacter()
+	if isBarbLeveling && target == item.LocationEquipped {
+		weaponsChanged, err := equipBestWeapons(itemsByLoc, itemScores)
+		if err != nil {
+			return false, err
+		}
+		if weaponsChanged {
+			equippedSomething = true
+			*ctx.Data = ctx.GameReader.GetData()
+			delete(itemsByLoc, item.LocLeftArm)
+			delete(itemsByLoc, item.LocRightArm)
+		}
+	}
+
+	locationOrder := make([]item.LocationType, 0, len(itemsByLoc))
+	for loc := range itemsByLoc {
+		locationOrder = append(locationOrder, loc)
+	}
+
+	for _, loc := range locationOrder {
+		items, ok := itemsByLoc[loc]
+		if !ok {
+			continue
+		}
 		// Find the best item for this slot that is not already equipped in ANOTHER slot.
 		var bestCandidate data.Item
 		foundCandidate := false
@@ -649,7 +705,7 @@ func getBodyLocationScreenCoords(bodyloc item.LocationType) (data.Position, erro
 		case item.LocRightRing:
 			return data.Position{X: ui.EquipRRinClassicX, Y: ui.EquipRRinClassicY}, nil
 		default:
-			return data.Position{}, fmt.Errorf("legacy coordinates for %s not defined.", bodyloc)
+			return data.Position{}, fmt.Errorf("legacy coordinates for %s not defined", bodyloc)
 		}
 	}
 	switch bodyloc {
@@ -676,6 +732,193 @@ func getBodyLocationScreenCoords(bodyloc item.LocationType) (data.Position, erro
 	default:
 		return data.Position{}, fmt.Errorf("coordinates for slot %s not defined. ", bodyloc)
 	}
+}
+
+// special logik for barb leveling
+func equipBestWeapons(itemsByLoc map[item.LocationType][]data.Item, itemScores map[data.UnitID]map[item.LocationType]float64) (bool, error) {
+	ctx := context.Get()
+
+	if ctx.Data.ActiveWeaponSlot == 1 {
+		return false, nil
+	}
+
+	playerLevel := 0
+	if lvl, found := ctx.Data.PlayerUnit.FindStat(stat.Level, 0); found {
+		playerLevel = lvl.Value
+	}
+	hasWarCry := ctx.Data.PlayerUnit.Skills[skill.WarCry].Level > 0
+	shieldsAllowed := playerLevel >= 31 || hasWarCry
+
+	leftEquipped := GetEquippedItem(ctx.Data.Inventory, item.LocLeftArm)
+	rightEquipped := GetEquippedItem(ctx.Data.Inventory, item.LocRightArm)
+
+	if shieldsAllowed {
+
+		var weapons []data.Item
+		if leftArmItems, ok := itemsByLoc[item.LocLeftArm]; ok {
+			for _, itm := range leftArmItems {
+				itemType := itm.Desc().Type
+				if !slices.Contains(shieldTypes, string(itemType)) {
+					weapons = append(weapons, itm)
+				}
+			}
+		}
+		if len(weapons) > 0 {
+			sort.Slice(weapons, func(i, j int) bool {
+				scoreI := itemScores[weapons[i].UnitID][item.LocLeftArm]
+				scoreJ := itemScores[weapons[j].UnitID][item.LocLeftArm]
+				return scoreI > scoreJ
+			})
+			bestWeapon := weapons[0]
+			if leftEquipped.UnitID != bestWeapon.UnitID {
+				ctx.Logger.Info(fmt.Sprintf("Equipping best weapon %s in mainhand (left arm).", bestWeapon.IdentifiedName))
+				if err := equip(bestWeapon, item.LocLeftArm, item.LocationEquipped); err == nil {
+					return true, nil
+				}
+			}
+		}
+		// Wenn eine Waffe auf right_arm ist, entferne sie (damit Platz für Schild ist)
+		if rightEquipped.UnitID != 0 {
+			rightItemType := rightEquipped.Desc().Type
+			if !slices.Contains(shieldTypes, string(rightItemType)) {
+				ctx.Logger.Info(fmt.Sprintf("Removing weapon %s from right arm to make room for shield.", rightEquipped.IdentifiedName))
+				if _, found := findInventorySpace(rightEquipped); !found {
+					return false, nil
+				}
+				rightArmCoords, err := getBodyLocationScreenCoords(item.LocRightArm)
+				if err != nil {
+					return false, err
+				}
+				if !ctx.Data.OpenMenus.Inventory {
+					ctx.HID.PressKeyBinding(ctx.Data.KeyBindings.Inventory)
+					utils.Sleep(EquipDelayMS)
+				}
+				ctx.HID.ClickWithModifier(game.LeftButton, rightArmCoords.X, rightArmCoords.Y, game.ShiftKey)
+				utils.Sleep(1000)
+				*ctx.Data = ctx.GameReader.GetData()
+				itemAfterUnequip := GetEquippedItem(ctx.Data.Inventory, item.LocRightArm)
+				if itemAfterUnequip.UnitID != 0 {
+					ctx.Logger.Warn("Failed to unequip weapon from right arm.")
+					return false, nil
+				}
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
+	allWeaponsMap := make(map[data.UnitID]data.Item)
+	if leftArmItems, ok := itemsByLoc[item.LocLeftArm]; ok {
+		for _, weapon := range leftArmItems {
+			allWeaponsMap[weapon.UnitID] = weapon
+		}
+	}
+
+	if !shieldsAllowed {
+		if rightArmItems, ok := itemsByLoc[item.LocRightArm]; ok {
+			for _, weapon := range rightArmItems {
+				allWeaponsMap[weapon.UnitID] = weapon
+			}
+		}
+	}
+
+	var allWeapons []data.Item
+	for _, weapon := range allWeaponsMap {
+		allWeapons = append(allWeapons, weapon)
+	}
+
+	sort.Slice(allWeapons, func(i, j int) bool {
+		scoreI := itemScores[allWeapons[i].UnitID][item.LocLeftArm]
+		scoreJ := itemScores[allWeapons[j].UnitID][item.LocLeftArm]
+		return scoreI > scoreJ
+	})
+
+	if len(allWeapons) == 0 {
+		return false, nil
+	}
+
+	bestWeapon := allWeapons[0]
+	var secondBestWeapon data.Item
+	if len(allWeapons) > 1 {
+		secondBestWeapon = allWeapons[1]
+	}
+
+	equippedWeapons := []data.Item{leftEquipped, rightEquipped}
+	idealIDs := map[data.UnitID]bool{
+		bestWeapon.UnitID: true,
+	}
+	if secondBestWeapon.UnitID != 0 {
+		idealIDs[secondBestWeapon.UnitID] = true
+	}
+
+	var weaponToReplace data.Item
+	for _, equipped := range equippedWeapons {
+		if equipped.UnitID != 0 && !idealIDs[equipped.UnitID] {
+			if shieldsAllowed && equipped.Location.BodyLocation == item.LocRightArm {
+				rightItemType := equipped.Desc().Type
+				if !slices.Contains(shieldTypes, string(rightItemType)) {
+					continue
+				}
+			}
+			weaponToReplace = equipped
+			break
+		}
+	}
+
+	if weaponToReplace.UnitID != 0 {
+		var replacementWeapon data.Item
+		if bestWeapon.UnitID != leftEquipped.UnitID && bestWeapon.UnitID != rightEquipped.UnitID {
+			replacementWeapon = bestWeapon
+		} else if secondBestWeapon.UnitID != 0 && (secondBestWeapon.UnitID != leftEquipped.UnitID && secondBestWeapon.UnitID != rightEquipped.UnitID) {
+			replacementWeapon = secondBestWeapon
+		}
+
+		if replacementWeapon.UnitID != 0 {
+			if shieldsAllowed && weaponToReplace.Location.BodyLocation == item.LocRightArm {
+				rightItemType := weaponToReplace.Desc().Type
+				if !slices.Contains(shieldTypes, string(rightItemType)) {
+					weaponToReplace = data.Item{}
+				}
+			}
+
+			if weaponToReplace.UnitID != 0 {
+				ctx.Logger.Info(fmt.Sprintf("Replacing weapon %s with %s.", weaponToReplace.IdentifiedName, replacementWeapon.IdentifiedName))
+				err := equip(replacementWeapon, weaponToReplace.Location.BodyLocation, item.LocationEquipped)
+				if err != nil {
+					return false, fmt.Errorf("failed to equip weapon: %w", err)
+				}
+				return true, nil
+			}
+		}
+	}
+
+	if leftEquipped.UnitID == 0 {
+		if bestWeapon.UnitID != rightEquipped.UnitID {
+			ctx.Logger.Info(fmt.Sprintf("Equipping best weapon %s in mainhand (left arm).", bestWeapon.IdentifiedName))
+			if err := equip(bestWeapon, item.LocLeftArm, item.LocationEquipped); err == nil {
+				return true, nil
+			}
+		}
+	}
+	if !shieldsAllowed {
+		if rightEquipped.UnitID == 0 {
+			var offhandWeapon data.Item
+			if secondBestWeapon.UnitID != 0 && secondBestWeapon.UnitID != leftEquipped.UnitID {
+				offhandWeapon = secondBestWeapon
+			} else if bestWeapon.UnitID != leftEquipped.UnitID {
+				offhandWeapon = bestWeapon
+			}
+
+			if offhandWeapon.UnitID != 0 {
+				ctx.Logger.Info(fmt.Sprintf("Equipping weapon %s in offhand (right arm).", offhandWeapon.IdentifiedName))
+				if err := equip(offhandWeapon, item.LocRightArm, item.LocationEquipped); err == nil {
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
 }
 
 func equipBestRings(itemsByLoc map[item.LocationType][]data.Item) (bool, error) {
@@ -814,6 +1057,8 @@ func equip(itm data.Item, bodyloc item.LocationType, target item.LocationType) e
 		} else {
 			currentlyEquipped := GetEquippedItem(ctx.Data.Inventory, bodyloc)
 			isRingSwap := itm.Desc().Type == "ring" && currentlyEquipped.UnitID != 0
+			isBarbLeveling := isBarbLevelingCharacter()
+			isBarbLocRightArm := isBarbLeveling && bodyloc == item.LocRightArm && currentlyEquipped.UnitID != 0
 
 			if isRingSwap {
 				if _, found := findInventorySpace(currentlyEquipped); !found {
@@ -853,6 +1098,43 @@ func equip(itm data.Item, bodyloc item.LocationType, target item.LocationType) e
 				ctx.Logger.Info(fmt.Sprintf("Equipping new ring: %s", newItemInInv.IdentifiedName))
 				newRingCoords := ui.GetScreenCoordsForItem(newItemInInv)
 				ctx.HID.ClickWithModifier(game.LeftButton, newRingCoords.X, newRingCoords.Y, game.ShiftKey)
+
+			} else if isBarbLocRightArm {
+				if _, found := findInventorySpace(currentlyEquipped); !found {
+					return ErrNotEnoughSpace
+				}
+
+				rightArmCoords, err := getBodyLocationScreenCoords(item.LocRightArm)
+				if err != nil {
+					return err
+				}
+
+				ctx.HID.ClickWithModifier(game.LeftButton, rightArmCoords.X, rightArmCoords.Y, game.ShiftKey)
+				utils.Sleep(1000)
+				*ctx.Data = ctx.GameReader.GetData()
+
+				itemAfterUnequip := GetEquippedItem(ctx.Data.Inventory, item.LocRightArm)
+				if itemAfterUnequip.UnitID != 0 {
+					ctx.Logger.Warn("Failed to unequip old item from right arm.")
+					return fmt.Errorf("failed to unequip old item from right arm")
+				}
+
+				var newItemInInv data.Item
+				var foundInInv bool
+				for _, invItem := range ctx.Data.Inventory.ByLocation(item.LocationInventory) {
+					if invItem.UnitID == itm.UnitID {
+						newItemInInv = invItem
+						foundInInv = true
+						break
+					}
+				}
+				if !foundInInv {
+					return fmt.Errorf("new item %s not found in inventory after unequip", itm.IdentifiedName)
+				}
+
+				ctx.Logger.Info(fmt.Sprintf("Equipping new item to right arm: %s", newItemInInv.IdentifiedName))
+				newItemCoords := ui.GetScreenCoordsForItem(newItemInInv)
+				ctx.HID.ClickWithModifier(game.LeftButton, newItemCoords.X, newItemCoords.Y, game.ShiftKey)
 
 			} else { // Standard logic for all other items
 				if currentlyEquipped.UnitID != 0 {
@@ -949,7 +1231,16 @@ func findInventorySpace(itm data.Item) (data.Position, bool) {
 	return data.Position{}, false
 }
 
-// GetEquippedItem is a new helper function to search for the currently equipped item in a specific location
+// wrapper for barb leveling boss equipment
+func IsItemEquippable(newItem data.Item, bodyloc item.LocationType, target item.LocationType) bool {
+	return isEquippable(newItem, bodyloc, target)
+}
+
+// wrapper for barb leveling boss equipment
+func EquipItem(itm data.Item, bodyloc item.LocationType, target item.LocationType) error {
+	return equip(itm, bodyloc, target)
+}
+
 func GetEquippedItem(inventory data.Inventory, loc item.LocationType) data.Item {
 	for _, itm := range inventory.ByLocation(item.LocationEquipped) {
 		if itm.Location.BodyLocation == loc && !itm.InTradeOrStoreScreen {
@@ -1047,4 +1338,63 @@ func UnEquipMercenary() error {
 	}
 
 	return nil
+}
+
+// Special Barb Logic
+func barblogic(newItem data.Item, bodyloc item.LocationType) bool {
+	ctx := context.Get()
+	itemType := newItem.Desc().Type
+	isShield := slices.Contains(shieldTypes, string(itemType))
+
+	if isShield {
+		playerLevel := 0
+		if lvl, found := ctx.Data.PlayerUnit.FindStat(stat.Level, 0); found {
+			playerLevel = lvl.Value
+		}
+		hasWarCry := ctx.Data.PlayerUnit.Skills[skill.WarCry].Level > 0
+
+		if playerLevel >= 31 || hasWarCry {
+			return bodyloc == item.LocRightArm
+		}
+		return false
+	}
+
+	if bodyloc == item.LocLeftArm || bodyloc == item.LocRightArm {
+		if newItem.Ethereal {
+			return false
+		}
+
+		twoHandedTypes := []string{"pole", "spea", "staf", "bow", "xbow", "bowq", "xbowq"}
+		if slices.Contains(twoHandedTypes, itemType) {
+			return false
+		}
+		_, hasBaseTwoHandedMin := newItem.BaseStats.FindStat(stat.TwoHandedMinDamage, 0)
+		_, hasBaseTwoHandedMax := newItem.BaseStats.FindStat(stat.TwoHandedMaxDamage, 0)
+		isTwoHanded := hasBaseTwoHandedMin || hasBaseTwoHandedMax
+
+		if isTwoHanded {
+			return false
+		}
+
+		// Only allow specific weapon types for 1-hand weapons
+		allowedOneHandTypes := []string{"mace", "club", "morningstar", "flail", "hammer", "maul", "warhammer", "scepter", "swor", "axe"}
+		if !slices.Contains(allowedOneHandTypes, itemType) {
+			return false
+		}
+
+		// Exclude normal/superior base items with sockets that are needed for Steel/Malice runewords
+		if newItem.Quality <= item.QualitySuperior && !newItem.IsRuneword {
+			sockets, hasSockets := newItem.FindStat(stat.NumSockets, 0)
+			if hasSockets {
+				steelMaliceBaseTypes := []string{"mace", "club"}
+				if slices.Contains(steelMaliceBaseTypes, itemType) {
+					if sockets.Value == 2 || sockets.Value == 3 {
+						return false
+					}
+				}
+			}
+		}
+	}
+
+	return true
 }

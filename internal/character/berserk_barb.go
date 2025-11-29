@@ -37,9 +37,14 @@ func (s *Berserker) CheckKeyBindings() []skill.ID {
 	requireKeybindings := []skill.ID{skill.BattleCommand, skill.BattleOrders, skill.Shout, skill.FindItem, skill.Berserk}
 	missingKeybindings := []skill.ID{}
 
-	// add Howl if enabled
-	if s.CharacterCfg.Character.BerserkerBarb.UseHowl {
+	hasHowl := s.Data.PlayerUnit.Skills[skill.Howl].Level > 0
+	if s.CharacterCfg.Character.BerserkerBarb.UseHowl && hasHowl {
 		requireKeybindings = append(requireKeybindings, skill.Howl)
+	}
+
+	hasBattleCry := s.Data.PlayerUnit.Skills[skill.BattleCry].Level > 0
+	if s.CharacterCfg.Character.BerserkerBarb.UseBattleCry && hasBattleCry {
+		requireKeybindings = append(requireKeybindings, skill.BattleCry)
 	}
 
 	for _, cskill := range requireKeybindings {
@@ -65,6 +70,8 @@ func (s *Berserker) KillMonsterSequence(
 ) error {
 	monsterDetected := false
 	var previousEnemyId data.UnitID
+	var lastHowlCast time.Time
+	var lastBattleCryCast time.Time
 
 	for attackAttempts := 0; attackAttempts < maxAttackAttempts; attackAttempts++ {
 		context.Get().PauseIfNotPriority()
@@ -99,11 +106,16 @@ func (s *Berserker) KillMonsterSequence(
 				s.Logger.Warn("Failed to move to monster", slog.String("error", err.Error()))
 				continue
 			}
+		}
 
-			if s.CharacterCfg.Character.BerserkerBarb.UseHowl {
-				s.PerformHowl()
-				time.Sleep(50 * time.Millisecond)
-			}
+		hasHowl := s.Data.PlayerUnit.Skills[skill.Howl].Level > 0
+		if s.CharacterCfg.Character.BerserkerBarb.UseHowl && hasHowl {
+			s.PerformHowl(id, &lastHowlCast)
+		}
+
+		hasBattleCry := s.Data.PlayerUnit.Skills[skill.BattleCry].Level > 0
+		if s.CharacterCfg.Character.BerserkerBarb.UseBattleCry && hasBattleCry {
+			s.PerformBattleCry(id, &lastBattleCryCast)
 		}
 
 		s.PerformBerserkAttack(monster.UnitID)
@@ -133,20 +145,130 @@ func (s *Berserker) PerformBerserkAttack(monsterID data.UnitID) {
 	ctx.HID.Click(game.LeftButton, screenX, screenY)
 }
 
-func (s *Berserker) PerformHowl() {
+// Helper functions
+func (s *Berserker) getManaPercentage() float64 {
+	currentMana, foundMana := s.Data.PlayerUnit.FindStat(stat.Mana, 0)
+	maxMana, foundMaxMana := s.Data.PlayerUnit.FindStat(stat.MaxMana, 0)
+	if !foundMana || !foundMaxMana || maxMana.Value == 0 {
+		return 0
+	}
+	return float64(currentMana.Value) / float64(maxMana.Value) * 100
+}
+
+func (s *Berserker) PerformHowl(targetID data.UnitID, lastHowlCast *time.Time) bool {
 	ctx := context.Get()
 	ctx.PauseIfNotPriority()
 
-	// Ensure Howl skill is active
-	howlKey, found := s.Data.KeyBindings.KeyBindingForSkill(skill.Howl)
-	if found && s.Data.PlayerUnit.RightSkill != skill.Howl {
-		ctx.HID.PressKeyBinding(howlKey)
-		time.Sleep(50 * time.Millisecond)
+	howlCooldownSeconds := s.CharacterCfg.Character.BerserkerBarb.HowlCooldown
+	if howlCooldownSeconds <= 0 {
+		howlCooldownSeconds = 6
+	}
+	howlCooldown := time.Duration(howlCooldownSeconds) * time.Second
+
+	minMonsters := s.CharacterCfg.Character.BerserkerBarb.HowlMinMonsters
+	if minMonsters <= 0 {
+		minMonsters = 4
 	}
 
-	// Cast Howl at character's position
-	screenX, screenY := ctx.PathFinder.GameCoordsToScreenCords(s.Data.PlayerUnit.Position.X, s.Data.PlayerUnit.Position.Y)
-	ctx.HID.Click(game.RightButton, screenX, screenY)
+	if !lastHowlCast.IsZero() && time.Since(*lastHowlCast) < howlCooldown {
+		return false
+	}
+
+	const howlRange = 4
+	closeMonsters := 0
+
+	for _, m := range ctx.Data.Monsters.Enemies() {
+		if m.Stats[stat.Life] <= 0 {
+			continue
+		}
+
+		distance := s.PathFinder.DistanceFromMe(m.Position)
+		if distance <= howlRange {
+			closeMonsters++
+		}
+	}
+
+	if closeMonsters < minMonsters {
+		return false
+	}
+
+	_, found := ctx.Data.KeyBindings.KeyBindingForSkill(skill.Howl)
+	if !found {
+		return false
+	}
+
+	*lastHowlCast = time.Now()
+
+	time.Sleep(100 * time.Millisecond)
+
+	err := step.SecondaryAttack(skill.Howl, targetID, 1, step.Distance(1, 10))
+	if err != nil {
+		return false
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	return true
+}
+
+func (s *Berserker) PerformBattleCry(monsterID data.UnitID, lastBattleCryCast *time.Time) bool {
+	ctx := context.Get()
+	ctx.PauseIfNotPriority()
+
+	manaPercentage := s.getManaPercentage()
+	if manaPercentage < 20 {
+		return false
+	}
+
+	battleCryCooldownSeconds := s.CharacterCfg.Character.BerserkerBarb.BattleCryCooldown
+	if battleCryCooldownSeconds <= 0 {
+		battleCryCooldownSeconds = 6
+	}
+	battleCryCooldown := time.Duration(battleCryCooldownSeconds) * time.Second
+
+	if !lastBattleCryCast.IsZero() && time.Since(*lastBattleCryCast) < battleCryCooldown {
+		return false
+	}
+
+	minMonsters := s.CharacterCfg.Character.BerserkerBarb.BattleCryMinMonsters
+	if minMonsters <= 0 {
+		minMonsters = 4
+	}
+
+	const battleCryRange = 4
+	closeMonsters := 0
+
+	for _, m := range ctx.Data.Monsters.Enemies() {
+		if m.Stats[stat.Life] <= 0 {
+			continue
+		}
+
+		distance := s.PathFinder.DistanceFromMe(m.Position)
+		if distance <= battleCryRange {
+			closeMonsters++
+		}
+	}
+
+	if closeMonsters < minMonsters {
+		return false
+	}
+
+	if _, found := ctx.Data.KeyBindings.KeyBindingForSkill(skill.BattleCry); found {
+		*lastBattleCryCast = time.Now()
+
+		time.Sleep(100 * time.Millisecond)
+
+		err := step.SecondaryAttack(skill.BattleCry, monsterID, 1, step.Distance(1, 5))
+		if err != nil {
+			return false
+		}
+
+		time.Sleep(300 * time.Millisecond)
+
+		return true
+	}
+
+	return false
 }
 
 func (s *Berserker) FindItemOnNearbyCorpses(maxRange int) {
