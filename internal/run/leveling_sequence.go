@@ -421,6 +421,17 @@ func (ls LevelingSequence) applyBeltColumnsOverride(columns []string) {
 	}
 }
 
+func (ls LevelingSequence) isAboveDifficulty(current, base difficulty.Difficulty) bool {
+	switch base {
+	case difficulty.Normal:
+		return current == difficulty.Nightmare || current == difficulty.Hell
+	case difficulty.Nightmare:
+		return current == difficulty.Hell
+	default:
+		return false
+	}
+}
+
 func (ls LevelingSequence) AdjustDifficulty() (bool, error) {
 	if ls.Settings == nil {
 		return false, errors.New("sequence settings not loaded")
@@ -433,19 +444,26 @@ func (ls LevelingSequence) AdjustDifficulty() (bool, error) {
 
 	difficultyChanged := false
 
-	//Check if we reached the level for current difficulty setting
+	// Check level requirements for each base difficulty.
+	// This block only DEMOTES you if you're too high for your stats/level.
 	difficulties := []difficulty.Difficulty{difficulty.Normal, difficulty.Nightmare}
-	for _, difficulty := range difficulties {
-		diffSettings := ls.GetDifficultySettings(difficulty)
-		nextDiff := ls.GetNextDifficulty(difficulty)
-		//We don't meet level requirements, revert to this difficulty
-		if !ls.CheckDifficultyConditions(diffSettings.NextDifficultyConditions, nextDiff, true) {
-			if difficulty != ls.ctx.CharacterCfg.Game.Difficulty {
-				ls.ctx.Logger.Info("Reverting difficulty", "difficulty", difficulty)
-				ls.ctx.CharacterCfg.Game.Difficulty = difficulty
-				difficultyChanged = true
-			}
-			//We break here to not evaluate next difficutlies
+	for _, diff := range difficulties {
+		diffSettings := ls.GetDifficultySettings(diff)
+		if diffSettings == nil || diffSettings.NextDifficultyConditions == nil {
+			continue
+		}
+
+		nextDiff := ls.GetNextDifficulty(diff)
+
+		// If we don't meet level requirements to go from diff -> nextDiff,
+		// and we're currently ABOVE diff, revert down to diff.
+		if !ls.CheckDifficultyConditions(diffSettings.NextDifficultyConditions, nextDiff, true) &&
+			ls.isAboveDifficulty(ls.ctx.CharacterCfg.Game.Difficulty, diff) {
+
+			ls.ctx.Logger.Info("Reverting difficulty", "difficulty", diff)
+			ls.ctx.CharacterCfg.Game.Difficulty = diff
+			difficultyChanged = true
+			// Don't evaluate harder difficulties once reverted.
 			break
 		}
 	}
