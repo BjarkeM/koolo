@@ -96,7 +96,7 @@ func (gd *MemoryReader) FetchMapData() error {
 
 			npcs, exits, objects, rooms := lvl.NPCsExitsAndObjects()
 			areaID := area.ID(lvl.ID)
-			grid := NewGrid(resultGrid, lvl.Offset.X, lvl.Offset.Y, exits, areaID)
+			grid := NewGrid(resultGrid, lvl.Offset.X, lvl.Offset.Y, exits, areaID, objects)
 			if !areaID.IsTown() {
 				gd.TeleportPostProcess(&grid.CollisionGrid, lvl.Size.Width, lvl.Size.Height)
 			}

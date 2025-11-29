@@ -3,6 +3,7 @@ package game
 import (
 	"github.com/hectorgimenez/d2go/pkg/data"
 	"github.com/hectorgimenez/d2go/pkg/data/area"
+	"github.com/hectorgimenez/d2go/pkg/data/object"
 )
 
 const (
@@ -13,7 +14,6 @@ const (
 	CollisionTypeObject
 	CollisionTypeTeleportOver
 	CollisionTypeThickened
-	CollisionTypeDiagonalTile
 )
 
 type CollisionType uint8
@@ -26,7 +26,7 @@ type Grid struct {
 	CollisionGrid [][]CollisionType
 }
 
-func NewGrid(rawCollisionGrid [][]CollisionType, offsetX, offsetY int, exits []data.Level, areaID area.ID) *Grid {
+func NewGrid(rawCollisionGrid [][]CollisionType, offsetX, offsetY int, exits []data.Level, areaID area.ID, objects []data.Object) *Grid {
 	grid := &Grid{
 		OffsetX:       offsetX,
 		OffsetY:       offsetY,
@@ -34,6 +34,15 @@ func NewGrid(rawCollisionGrid [][]CollisionType, offsetX, offsetY int, exits []d
 		Height:        len(rawCollisionGrid),
 		CollisionGrid: rawCollisionGrid,
 	}
+
+	if areaID.Area().Act() == 1 {
+		// Act 1 areas have some problematic areas with tiles that are marked walkable but are not.
+		// To avoid pathing issues, we thicken all non-walkable tiles in Act 1 areas.
+		thickenCollisions(rawCollisionGrid, objects, offsetX, offsetY)
+	}
+
+	fillGaps(rawCollisionGrid)
+	drillExits(rawCollisionGrid, offsetX, offsetY, exits)
 
 	// Lower the priority for the walkable tiles that are close to non-walkable tiles, so we can avoid walking too close to walls and obstacles
 	lowPriorityRadius := 2
@@ -58,11 +67,6 @@ func NewGrid(rawCollisionGrid [][]CollisionType, offsetX, offsetY int, exits []d
 		}
 	}
 
-	fillGaps(rawCollisionGrid)
-	thickenCollisions(rawCollisionGrid)
-	markDiagonalTiles(rawCollisionGrid)
-	drillExits(rawCollisionGrid, offsetX, offsetY, exits)
-
 	return grid
 }
 
@@ -79,24 +83,20 @@ func NewGridFromProcessed(processedCollisionGrid [][]CollisionType, offsetX, off
 }
 
 func isBlockingTile(tile CollisionType, canTeleport bool) bool {
-	if tile == CollisionTypeNonWalkable || tile == CollisionTypeObject || tile == CollisionTypeMonster {
+	switch tile {
+	case CollisionTypeNonWalkable:
 		return true
-	}
-	if !canTeleport && tile == CollisionTypeTeleportOver {
-		return true
-	}
-	if canTeleport && tile == CollisionTypeThickened {
+	case CollisionTypeTeleportOver:
+		return !canTeleport
+	case CollisionTypeThickened:
+		return !canTeleport
+	default:
 		return false
 	}
-	return tile == CollisionTypeThickened
-}
-
-func baseWalkable(ct CollisionType) bool {
-	return ct == CollisionTypeWalkable || ct == CollisionTypeLowPriority
 }
 
 func isWalkableType(ct CollisionType) bool {
-	return ct == CollisionTypeWalkable || ct == CollisionTypeLowPriority || ct == CollisionTypeDiagonalTile
+	return ct == CollisionTypeWalkable || ct == CollisionTypeLowPriority
 }
 
 func IsWalkableType(ct CollisionType) bool {
@@ -135,17 +135,34 @@ func (g *Grid) Copy() *Grid {
 	}
 }
 
-func thickenCollisions(grid [][]CollisionType) {
+func thickenCollisions(grid [][]CollisionType, objects []data.Object, offsetX, offsetY int) {
 	buffer := make([][]bool, len(grid))
 	for y := range grid {
 		buffer[y] = make([]bool, len(grid[y]))
 	}
 
+	var treeObj *data.Object
+	for _, obj := range objects {
+		if obj.Name == object.InifussTree {
+			treeObj = &obj
+			break
+		}
+	}
+
 	for y := range grid {
 		for x := range grid[y] {
-			if !isBlockingTile(grid[y][x], false) {
+			if grid[y][x] != CollisionTypeNonWalkable {
 				continue
 			}
+			// if we're close the Inifuss tree, skip thickening
+			if treeObj != nil {
+				treeX := treeObj.Position.X - offsetX
+				treeY := treeObj.Position.Y - offsetY
+				if absInt(x-treeX) <= 10 && absInt(y-treeY) <= 10 {
+					continue
+				}
+			}
+
 			for _, delta := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 				ny := y + delta[1]
 				nx := x + delta[0]
@@ -158,7 +175,7 @@ func thickenCollisions(grid [][]CollisionType) {
 					continue
 				}
 
-				if row[nx] == CollisionTypeWalkable || row[nx] == CollisionTypeLowPriority {
+				if row[nx] == CollisionTypeWalkable {
 					buffer[ny][nx] = true
 				}
 			}
@@ -169,58 +186,6 @@ func thickenCollisions(grid [][]CollisionType) {
 		for x := range grid[y] {
 			if buffer[y][x] {
 				grid[y][x] = CollisionTypeThickened
-			}
-		}
-	}
-}
-
-func markDiagonalTiles(grid [][]CollisionType) {
-	// Mark tiles that only touch walkable space diagonally
-	// so pathing can slide through tight corners created by thickened tiles
-	if len(grid) == 0 {
-		return
-	}
-
-	toDiagonal := make([][]bool, len(grid))
-	for y := range grid {
-		toDiagonal[y] = make([]bool, len(grid[y]))
-	}
-
-	for y := 0; y+1 < len(grid); y++ {
-		row := grid[y]
-		next := grid[y+1]
-
-		w := len(row)
-		if len(next) < w {
-			w = len(next)
-		}
-
-		for x := 0; x+1 < w; x++ {
-			a := row[x]    // (x,   y)
-			b := row[x+1]  // (x+1, y)
-			c := next[x]   // (x,   y+1)
-			d := next[x+1] // (x+1, y+1)
-
-			// Case 1: a & d walkable, b & c thickened
-			if baseWalkable(a) && baseWalkable(d) &&
-				b == CollisionTypeThickened && c == CollisionTypeThickened {
-				toDiagonal[y][x+1] = true // b
-				toDiagonal[y+1][x] = true // c
-			}
-
-			// Case 2: b & c walkable, a & d thickened
-			if baseWalkable(b) && baseWalkable(c) &&
-				a == CollisionTypeThickened && d == CollisionTypeThickened {
-				toDiagonal[y][x] = true     // a
-				toDiagonal[y+1][x+1] = true // d
-			}
-		}
-	}
-
-	for y := range grid {
-		for x := range grid[y] {
-			if toDiagonal[y][x] {
-				grid[y][x] = CollisionTypeDiagonalTile
 			}
 		}
 	}
@@ -349,4 +314,12 @@ func fillGaps(grid [][]CollisionType) {
 			row[x] = CollisionTypeThickened
 		}
 	}
+}
+
+// absInt returns the absolute value of an integer.
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
