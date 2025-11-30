@@ -53,6 +53,11 @@ func ctrlDown() bool {
 	return isKeyPressed(win.VK_CONTROL) || isKeyPressed(win.VK_LCONTROL) || isKeyPressed(win.VK_RCONTROL)
 }
 
+func (t *DevRun) gameWindowFocused() bool {
+	fg := win.GetForegroundWindow()
+	return fg != 0 && t.ctx != nil && t.ctx.GameReader != nil && fg == t.ctx.GameReader.HWND
+}
+
 func (t *DevRun) captureCursor() (screenX, screenY, gameX, gameY int) {
 	var pt win.POINT
 	win.GetCursorPos(&pt)
@@ -264,6 +269,9 @@ func (t *DevRun) Run(parameters *RunParameters) error {
 }
 
 func (t *DevRun) processHotkeys(keys []*Hotkey) {
+	if !t.gameWindowFocused() {
+		return
+	}
 	for _, hk := range keys {
 		if hk.combo() {
 			// this is to prevent multiple triggers while holding the key down, if you remove this, funny things will happen :)
@@ -278,6 +286,9 @@ func (t *DevRun) processHotkeys(keys []*Hotkey) {
 }
 
 func (t *DevRun) handleCtrlClickNavigation() {
+	if !t.gameWindowFocused() {
+		return
+	}
 	if !(ctrlDown() && isKeyPressed(int(win.VK_LBUTTON))) {
 		t.ctrlClickEngaged = false
 		return
