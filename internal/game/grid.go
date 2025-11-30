@@ -35,7 +35,7 @@ func NewGrid(rawCollisionGrid [][]CollisionType, offsetX, offsetY int, exits []d
 		CollisionGrid: rawCollisionGrid,
 	}
 
-	if areaID.Area().Act() == 1 {
+	if areaID.Area().Act() == 1 || areaID.IsTown() {
 		// Act 1 areas have some problematic areas with tiles that are marked walkable but are not.
 		// To avoid pathing issues, we thicken all non-walkable tiles in Act 1 areas.
 		thickenCollisions(rawCollisionGrid, objects, offsetX, offsetY)
